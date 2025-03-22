@@ -51,6 +51,20 @@ delay_per_page = 5 # seconds
 
 max_retry = 3
 
+
+# workaround to surpress insignificant quit exception
+# see https://github.com/ultrafunkamsterdam/undetected-chromedriver/issues/955
+class Chrome(uc.Chrome):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def quit(self):
+        try:
+            super().quit()
+        except OSError:
+            pass
+
+
 def sleep_scheduler(avg_delay):
     global last_pause_time, last_delay_time
     
@@ -157,7 +171,7 @@ def get_uc_driver(headless):
     options = uc.ChromeOptions()
     if headless:
         options.add_argument('headless')  # Run in headless mode
-    driver = uc.Chrome(options=options)
+    driver = Chrome(options=options)
     return driver
         
 def login_to_pixiv(username, password, cookie_path):
@@ -168,7 +182,7 @@ def login_to_pixiv(username, password, cookie_path):
     
     options = uc.ChromeOptions()
     # create interactive driver
-    driver = uc.Chrome(options=options)
+    driver = Chrome(options=options)
     driver.get(login_url)
     
     # Wait for the login page to load
@@ -373,15 +387,15 @@ def main():
             
             pbar.close()
             print("\n")
+    print("> All keywords successfully processed. Quit")
     driver.quit()
-
+    exit(0)
+        
 if __name__ == "__main__":
     main()
     
 """
-tested arguments:
-    -t data/target.csv -f 60 -l 200
-this setup won't break the download limit of pixiv
-
+Example:
+In main workspace directory
 python crawler/pixiv_crawl.py -l 1000 -f 100 -t crawler/th_name_pretest.csv -p data
 """
