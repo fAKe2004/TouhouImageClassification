@@ -226,7 +226,24 @@ def clean_saved_info(seen_urls_path, cookie_path):
         print(f"Cleaned saved cookies: {cookie_path}")
     else:
         print(f"Cookies {cookie_path} does not exist. Skip clean")
-
+        
+def skip_exisiting_data(path_keyword, downloaded, limit):
+    # skip existing data
+    skip_cnt = 0
+    while downloaded < limit:
+        ext_set = {"jpg", "jpeg", "png", "webp"}
+        exists = False
+        for ext in ext_set:
+            filepath = os.path.join(path_keyword, f"{downloaded+1}.{ext}")
+            if os.path.exists(filepath):
+                exists = True
+                break
+        if exists:
+            downloaded += 1
+            skip_cnt += 1
+        else:
+            break
+    return downloaded, skip_cnt
 def main():
     parser = argparse.ArgumentParser(description="Pixiv Crawler with undetected-chromedriver")
     parser.add_argument('--target', '-t', required=True, help="CSV file with a 'keyword' field")
@@ -295,21 +312,10 @@ def main():
             
             # progress bar
             pbar = tqdm(total=args.limit, desc=f"Downloading images for '{keyword}'")
-            
-            # skip existing data
-            while downloaded < args.limit:
-                ext_set = {"jpg", "jpeg", "png", "webp"}
-                exists = False
-                for ext in ext_set:
-                    filepath = os.path.join(args.path_keyword, f"{downloaded+1}.{ext}")
-                    if os.path.exists(filepath):
-                        exists = True
-                        break
-                if exists:
-                    downloaded += 1
-                    pbar.update(1)
-                else:
-                    break
+
+            # skip existing data at beginning
+            downloaded, skip_cnt = skip_exisiting_data(args.path_keyword, downloaded, args.limit)
+            pbar.update(skip_cnt)
             
             # actual fetching
             while downloaded < args.limit:
@@ -332,6 +338,11 @@ def main():
                     if url in seen_urls:
                         seen_cnt += 1
                         continue
+                    
+                    # skip existing data
+                    downloaded, skip_cnt = skip_exisiting_data(args.path_keyword, downloaded, args.limit)
+                    pbar.update(skip_cnt)
+                    
                     if downloaded >= args.limit:
                         break
                     
@@ -359,6 +370,8 @@ def main():
                 else:
                     print(f"")
                 page += 1
+            
+            pbar.close()
             print("\n")
     driver.quit()
 
@@ -370,5 +383,5 @@ tested arguments:
     -t data/target.csv -f 60 -l 200
 this setup won't break the download limit of pixiv
 
-python crawler/pixiv_crawl.py -l 1000 -f 100 -t data/th_name_pretest.csv -p data
+python crawler/pixiv_crawl.py -l 1000 -f 100 -t crawler/th_name_pretest.csv -p data
 """
