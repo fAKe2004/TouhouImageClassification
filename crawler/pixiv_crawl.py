@@ -20,6 +20,8 @@ options:
                         Pixiv password
   --disable-headless    Disable headless mode
   --clean, -c           Clean saved seen_urls and cookie
+  --filtering-count FILTERING_COUNT, -fc FILTERING_COUNT
+                        Filter by the count of illustrations in csv_file(cnt)
   
 Remarks:
     1. to fetching more than ten pages, provides username and password
@@ -38,6 +40,7 @@ import urllib.parse
 import undetected_chromedriver as uc
 import pickle
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
 # hyper parameters
@@ -105,6 +108,11 @@ def mimic_user_interaction(driver):
     time.sleep(1)
 
     time.sleep(delay_per_page - 5) # Wait for the rest of the delay
+
+def wait_for_page_load(driver, timeout=60):
+    WebDriverWait(driver, timeout).until(
+        lambda d: d.execute_script("return document.readyState") == "complete"
+    )
     
 def get_image_urls_from_page(driver, keyword, page):
     # get page url with no r18
@@ -113,9 +121,13 @@ def get_image_urls_from_page(driver, keyword, page):
     url = base_url.format(encoded_keyword, page)
     print(f"\nFetching: {url}")
     driver.get(url)
+    # Wait for the page to load completely
+    wait_for_page_load(driver, 300)
     
     # Emulate some user interactions to ensure the page loads completely
     mimic_user_interaction(driver)
+
+    wait_for_page_load(driver, 300)
     
     print(f"Fetching complete")
     
@@ -134,6 +146,11 @@ def get_image_urls_from_page(driver, keyword, page):
     
     result = list(dict.fromkeys(image_urls))
     print(f"Found {len(result)} images on page {page} for '{keyword}'")
+
+    if (len(result)<=1):
+        with open("debug.html", "w") as f:
+            f.write(driver.page_source)
+
     return result
 
 def download_image(url, filepath):
@@ -153,6 +170,15 @@ def download_image(url, filepath):
         print(f"Failed to download image {url}: {e}, retry")
         return False
     return True
+
+def try_download_image(url, filepath, try_cnt=3):
+    for i in range(try_cnt):
+        time.sleep(random.uniform(0.5, 1.5))  # Random delay between retries
+        if download_image(url, filepath):
+            return True
+        else:
+            print(f"Retry {i+1}/{try_cnt} for {url}")
+    return False
     
 def get_extension_from_url(url):
     path = urllib.parse.urlparse(url).path
@@ -172,34 +198,47 @@ def get_uc_driver(headless):
     if headless:
         options.add_argument('headless')  # Run in headless mode
     driver = Chrome(options=options)
+    # driver.execute_cdp_cmd("Network.enable", {})
     return driver
         
 def login_to_pixiv(username, password, cookie_path):
     if os.path.exists(cookie_path):
         print("Cookie already exists. Skip interactive logging")
+        return
         
-    login_url = "https://accounts.pixiv.net/login"
+    login_url = "https://accounts.pixiv.net/login?return_to=https%3A%2F%2Fwww.pixiv.net%2F&source=pc&view_type=page"
     
     options = uc.ChromeOptions()
     # create interactive driver
     driver = Chrome(options=options)
     driver.get(login_url)
-    
+
     # Wait for the login page to load
+    wait_for_page_load(driver, timeout=180)
     time.sleep(2)
     
     # Find and fill the username and password fields
-    username_field = driver.find_element(By.CSS_SELECTOR, "input[type='text']")
-    password_field = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
-    
+    while (True):
+        try:
+            username_field = driver.find_element(By.CSS_SELECTOR, "input[type='text']")
+            password_field = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+
+            break
+        except Exception as e:
+            print(f"Login page not loaded yet. Retry ...")
+            wait_for_page_load(driver, timeout=180)
+            time.sleep(2)
+        
     username_field.send_keys(username)
     password_field.send_keys(password)
+    
     
     # Find and click the login button with more specific selector
     login_button = driver.find_element(By.CSS_SELECTOR, "button.charcoal-button[data-variant='Primary'][data-full-width='true']")
     login_button.click()
     
     # Wait for the login process to complete
+    wait_for_page_load(driver, timeout=180)
     time.sleep(2)
     
     # Check if login was successful
@@ -268,6 +307,7 @@ def main():
     parser.add_argument('--password', '-pw', type=str, default='', help="Pixiv password")
     parser.add_argument('--disable-headless', action='store_true', help="Disable headless mode")
     parser.add_argument('--clean', '-c', action='store_true', help="Clean saved seen_urls and cookie")
+    parser.add_argument('--filtering-count', '-fc', type=int, default=2000, help="Filter by the count of illustrations in csv_file(cnt)")
     
     args = parser.parse_args()
     
@@ -308,17 +348,26 @@ def main():
         reader = csv.DictReader(csvfile)
         for row in reader: # process each keyword
             keyword = row.get("keyword")
+            name = row.get("name")
+            cnt = row.get("cnt")
             
             
             if not keyword:
                 print("keyword is None, skip")
                 continue
+
+            if cnt and int(cnt) < args.filtering_count:
+                print(f"Keyword '{keyword}' has count {cnt} < {args.filtering_count}, skip")
+                continue
+
+            if not name:
+                name = keyword
             
-            args.path_keyword = os.path.join("data", keyword)
+            args.path_keyword = os.path.join("data", name)
             if not os.path.exists(args.path_keyword):
                 os.makedirs(args.path_keyword)
             
-            print(f"Processing keyword: {keyword}")
+            print(f"Processing name: {name} with keyword: {keyword}")
             downloaded = 0
             page = 1
 
@@ -337,9 +386,11 @@ def main():
                 retry = 0
                 while retry < max_retry:
                     image_urls = get_image_urls_from_page(driver, keyword, page)
-                    if len(image_urls) == 0:
+                    if len(image_urls) <= 1:
                         print(f"No images found on page {page} for '{keyword}'. Retry")
                         retry += 1
+                        if (retry < max_retry):
+                            sleep_scheduler(300)
                     else:
                         break
                     
@@ -368,7 +419,7 @@ def main():
                     ext = get_extension_from_url(url)
                     filepath = os.path.join(args.path_keyword, f"{downloaded+1}{ext}")
                     
-                    succeed = download_image(url, filepath)
+                    succeed = try_download_image(url, filepath)
                     
                     if succeed:
                         downloaded += 1

@@ -87,7 +87,7 @@ def filter_tags_by_count_and_related_tags_saving_to(tags : pd.DataFrame, related
     Filter tags each row by finding max count with related tags.
     '''
     with open(save_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        print("Name,Tag,Cnt", file=csvfile)
+        print("name,keyword,cnt", file=csvfile)
         filtered_tags = []
         for index, data in tags.iterrows():
             zh_name = tags['CH'][index]
@@ -104,7 +104,7 @@ def filter_tags_by_count_and_related_tags_saving_to(tags : pd.DataFrame, related
                     if (find_related_tag(des, related_tag) and cnt > max_cnt):
                         max_cnt = cnt
                         target_tag = name
-            filtered_tags.append({"Name": zh_name, "Tag": target_tag, "Cnt": max_cnt})
+            filtered_tags.append({"name": zh_name, "tag": target_tag, "cnt": max_cnt})
             print(f"Chose {target_tag} as the most related tag for {zh_name}!")
             print(f"{zh_name},{target_tag},{max_cnt}", file=csvfile)
             csvfile.flush()
