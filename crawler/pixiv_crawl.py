@@ -21,7 +21,9 @@ options:
   --disable-headless    Disable headless mode
   --clean, -c           Clean saved seen_urls and cookie
   --filtering-count FILTERING_COUNT, -fc FILTERING_COUNT
-                        Filter by the count of illustrations in csv_file(cnt)
+                        Filter by the count of illustrations in csv_file(cnt), default 2000
+  --always-restart, -ar
+                        Restart the script when it accidentally quit
   
 Remarks:
     1. to fetching more than ten pages, provides username and password
@@ -40,7 +42,9 @@ import urllib.parse
 import undetected_chromedriver as uc
 import pickle
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.action_chains import ActionChains
 from tqdm import tqdm
 
 # hyper parameters
@@ -54,6 +58,7 @@ delay_per_page = 5 # seconds
 
 max_retry = 3
 
+request_session = requests.Session()
 
 # workaround to surpress insignificant quit exception
 # see https://github.com/ultrafunkamsterdam/undetected-chromedriver/issues/955
@@ -91,28 +96,36 @@ def sleep_scheduler(avg_delay):
         time.sleep(interval_of_pause)
         last_pause_time = time.time()
         
-def mimic_user_interaction(driver): 
+def wait_for_page_load(driver, timeout=60):
+    WebDriverWait(driver, timeout).until(
+        lambda d: d.execute_script("return document.readyState") == "complete"
+    )
+
+def mimic_user_interaction(driver : Chrome): 
     # change focus
+    # driver.minimize_window()
+    # driver.maximize_window()
     driver.execute_script("window.focus();")
     driver.execute_script("document.dispatchEvent(new Event('visibilitychange'));")
+    driver.execute_script("document.hasFocus = () => true;")
+    driver.get_screenshot_as_base64()  # Trigger a screenshot to ensure the page is loaded
+
+    ActionChains(driver).move_by_offset(random.uniform(5, 15), random.uniform(5, 15)).perform()
+    wait_for_page_load(driver, timeout=60)
     
-    # driver.find_element(By.TAG_NAME, "body").click()  # Click on the leftmost side
+    driver.find_element(By.TAG_NAME, "body").click()  # Click on the leftmost side
     time.sleep(1)
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 3);") # Scroll to middle 1/3
+    driver.execute_script(f"window.scrollTo(0, document.body.scrollHeight * {random.uniform(20, 40) / 100});") # Scroll to middle 1/3
     time.sleep(1)
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 3 * 2);")  # Scroll to middle 2/3
+    driver.execute_script(f"window.scrollTo(0, document.body.scrollHeight * {random.uniform(50, 70) / 100});")  # Scroll to middle 2/3
     time.sleep(1)
     driver.execute_script("window.scrollTo(0, 0);")  # Scroll to top
     time.sleep(1)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")  # Scroll to bottom
     time.sleep(1)
 
+    wait_for_page_load(driver, timeout=60)
     time.sleep(delay_per_page - 5) # Wait for the rest of the delay
-
-def wait_for_page_load(driver, timeout=60):
-    WebDriverWait(driver, timeout).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
     
 def get_image_urls_from_page(driver, keyword, page):
     # get page url with no r18
@@ -121,19 +134,17 @@ def get_image_urls_from_page(driver, keyword, page):
     url = base_url.format(encoded_keyword, page)
     print(f"\nFetching: {url}")
     driver.get(url)
-    # Wait for the page to load completely
-    wait_for_page_load(driver, 300)
-    
     # Emulate some user interactions to ensure the page loads completely
     mimic_user_interaction(driver)
-
-    wait_for_page_load(driver, 300)
     
     print(f"Fetching complete")
     
     # Check if the URL is correct (redirect may happen if not logined)
-    if url != driver.current_url:
+    while url != driver.current_url:
         print(f"[Warning]: current URL '{driver.current_url}' have changed")
+        if ("premium" in driver.current_url):
+            driver.get(url)
+            mimic_user_interaction(driver)
 
     imgs = driver.find_elements(By.TAG_NAME, "img")
     image_urls = []
@@ -148,33 +159,38 @@ def get_image_urls_from_page(driver, keyword, page):
     print(f"Found {len(result)} images on page {page} for '{keyword}'")
 
     if (len(result)<=1):
-        with open("debug.html", "w") as f:
+        with open("debug.html", "w", encoding='utf-8') as f:
             f.write(driver.page_source)
 
     return result
 
-def download_image(url, filepath):
+def download_image(session, url, filepath):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Referer": "https://www.pixiv.net/"
     }
     try:
-        r = requests.get(url, headers=headers, stream=True, timeout=10)
+        r = session.get(url, headers=headers, stream=True, timeout=10)
         r.raise_for_status()
         with open(filepath, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
         # print(f"Downloaded: {filepath}")
+    except requests.exceptions.HTTPError as e:
+        if (e.response.status_code == 403):
+            print(f"403 Forbidden: {url}, now sleep for a while")
+            time.sleep(random.uniform(300, 600))
+        return False
     except Exception as e:
         print(f"Failed to download image {url}: {e}, retry")
         return False
     return True
 
-def try_download_image(url, filepath, try_cnt=3):
+def try_download_image(session, url, filepath, try_cnt=3):
     for i in range(try_cnt):
         time.sleep(random.uniform(0.5, 1.5))  # Random delay between retries
-        if download_image(url, filepath):
+        if download_image(session, url, filepath):
             return True
         else:
             print(f"Retry {i+1}/{try_cnt} for {url}")
@@ -297,19 +313,8 @@ def skip_exisiting_data(path_keyword, downloaded, limit):
         else:
             break
     return downloaded, skip_cnt
-def main():
-    parser = argparse.ArgumentParser(description="Pixiv Crawler with undetected-chromedriver")
-    parser.add_argument('--target', '-t', required=True, help="CSV file with a 'keyword' field")
-    parser.add_argument('--freq', '-f', type=int, default=60, help="Number of images to crawl per minute")
-    parser.add_argument('--limit', '-l', type=int, required=True, help="Number of images per keyword")
-    parser.add_argument('--path', '-p', type=str, default="data/", help="Dirctionary to save images")
-    parser.add_argument('--username', '-u', type=str, default='', help="Pixiv username")
-    parser.add_argument('--password', '-pw', type=str, default='', help="Pixiv password")
-    parser.add_argument('--disable-headless', action='store_true', help="Disable headless mode")
-    parser.add_argument('--clean', '-c', action='store_true', help="Clean saved seen_urls and cookie")
-    parser.add_argument('--filtering-count', '-fc', type=int, default=2000, help="Filter by the count of illustrations in csv_file(cnt)")
-    
-    args = parser.parse_args()
+
+def main(args):
     
     # Precompute paths
     seen_urls_path = os.path.join(args.path, "seen_urls.txt")
@@ -390,13 +395,17 @@ def main():
                         print(f"No images found on page {page} for '{keyword}'. Retry")
                         retry += 1
                         if (retry < max_retry):
-                            sleep_scheduler(300)
+                            time.sleep(random.uniform(10, 30))
                     else:
                         break
                     
                 if retry == max_retry:
                     print(f"Failed to fetch images after {max_retry} attempts. Skip.")
                     break
+
+                session = requests.Session()
+                for c in driver.get_cookies():
+                    session.cookies.set(c['name'], c['value'], domain=c['domain'])
                 
                 seen_cnt = 0
                 for url in image_urls:
@@ -419,7 +428,7 @@ def main():
                     ext = get_extension_from_url(url)
                     filepath = os.path.join(args.path_keyword, f"{downloaded+1}{ext}")
                     
-                    succeed = try_download_image(url, filepath)
+                    succeed = try_download_image(session, url, filepath)
                     
                     if succeed:
                         downloaded += 1
@@ -441,9 +450,38 @@ def main():
     print("> All keywords successfully processed. Quit")
     driver.quit()
     exit(0)
+
+def guarder():
+    '''
+    Guard against accidental execution of the script.
+    '''
+    parser = argparse.ArgumentParser(description="Pixiv Crawler with undetected-chromedriver")
+    parser.add_argument('--target', '-t', required=True, help="CSV file with a 'keyword' field")
+    parser.add_argument('--freq', '-f', type=int, default=60, help="Number of images to crawl per minute")
+    parser.add_argument('--limit', '-l', type=int, required=True, help="Number of images per keyword")
+    parser.add_argument('--path', '-p', type=str, default="data/", help="Dirctionary to save images")
+    parser.add_argument('--username', '-u', type=str, default='', help="Pixiv username")
+    parser.add_argument('--password', '-pw', type=str, default='', help="Pixiv password")
+    parser.add_argument('--disable-headless', action='store_true', help="Disable headless mode")
+    parser.add_argument('--clean', '-c', action='store_true', help="Clean saved seen_urls and cookie")
+    parser.add_argument('--filtering-count', '-fc', type=int, default=2000, help="Filter by the count of illustrations in csv_file(cnt)")
+    parser.add_argument('--always-restart', '-ar', action='store_true', help="Restart the script when it accidentally quit")
+    
+    args = parser.parse_args()
+
+    if args.always_restart:
+        print("Always restart mode enabled. If you want to quit, please CTRL+C")
+        while True:
+            try:
+                main(args)
+            except Exception as e:
+                print(f"Error occurred: {e}. Restarting in 10 minutes...")
+                time.sleep(600)
+    else:
+        main(args)
         
 if __name__ == "__main__":
-    main()
+    guarder()
     
 """
 Example:
