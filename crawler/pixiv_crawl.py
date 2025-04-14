@@ -34,6 +34,7 @@ Remarks:
 
 import argparse
 import csv
+import gc
 import os
 import time
 import random
@@ -71,6 +72,10 @@ class Chrome(uc.Chrome):
             super().quit()
         except OSError:
             pass
+
+# Exceptions that some pages are not reachable
+class PageNotReachable(Exception):
+    pass
 
 
 def sleep_scheduler(avg_delay):
@@ -110,7 +115,11 @@ def mimic_user_interaction(driver : Chrome):
     driver.execute_script("document.hasFocus = () => true;")
     driver.get_screenshot_as_base64()  # Trigger a screenshot to ensure the page is loaded
 
-    ActionChains(driver).move_by_offset(random.uniform(5, 15), random.uniform(5, 15)).perform()
+    try:
+        ActionChains(driver).move_by_offset(random.uniform(5, 15), random.uniform(5, 15)).perform()
+    except Exception as e:
+        ActionChains(driver).reset_actions().perform()
+
     wait_for_page_load(driver, timeout=60)
     
     driver.find_element(By.TAG_NAME, "body").click()  # Click on the leftmost side
@@ -170,20 +179,16 @@ def download_image(session, url, filepath):
         "Referer": "https://www.pixiv.net/"
     }
     try:
-        r = session.get(url, headers=headers, stream=True, timeout=10)
+        r = session.get(url, headers=headers, stream=True, timeout=30)
         r.raise_for_status()
         with open(filepath, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
         # print(f"Downloaded: {filepath}")
-    except requests.exceptions.HTTPError as e:
-        if (e.response.status_code == 403):
-            print(f"403 Forbidden: {url}, now sleep for a while")
-            time.sleep(random.uniform(300, 600))
-        return False
     except Exception as e:
-        print(f"Failed to download image {url}: {e}, retry")
+        print(f"Failed to download image {url}: {e}, retry after sleep for a while")
+        time.sleep(random.uniform(60, 120))
         return False
     return True
 
@@ -211,6 +216,9 @@ def read_seen_urls_from_file(seen_urls_path):
 
 def get_uc_driver(headless):
     options = uc.ChromeOptions()
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+    options.add_argument("--incognito")  # Use incognito mode
     if headless:
         options.add_argument('headless')  # Run in headless mode
     driver = Chrome(options=options)
@@ -332,124 +340,136 @@ def main(args):
     
     # Get driver
     driver = get_uc_driver(not args.disable_headless)
-    
-    if args.username and args.password:
-        print("Logging in to Pixiv and save cookies ...")
-        login_to_pixiv(args.username, args.password, cookie_path)
-        load_cookies(driver, cookie_path)
-    else:
-        print("No login credentials provided. Attempting to load cookies ...")
-        try:
+
+    try:
+        if args.username and args.password:
+            print("Logging in to Pixiv and save cookies ...")
+            login_to_pixiv(args.username, args.password, cookie_path)
             load_cookies(driver, cookie_path)
-        except FileNotFoundError:
-            print("Proceeding without login. If this is not desired, CTRL+C now")
+        else:
+            print("No login credentials provided. Attempting to load cookies ...")
+            try:
+                load_cookies(driver, cookie_path)
+            except FileNotFoundError:
+                print("Proceeding without login. If this is not desired, CTRL+C now")
+            
         
-    
-    assert os.path.exists(args.target), f"File {args.target} does not exist"
+        assert os.path.exists(args.target), f"File {args.target} does not exist"
 
-    with open(args.target, newline='', encoding='utf-8') as csvfile:
-        seen_urls, seen_urls_file = read_seen_urls_from_file(seen_urls_path)
-        
-        reader = csv.DictReader(csvfile)
-        for row in reader: # process each keyword
-            keyword = row.get("keyword")
-            name = row.get("name")
-            cnt = row.get("cnt")
-            
-            
-            if not keyword:
-                print("keyword is None, skip")
-                continue
+        skipped = False
 
-            if cnt and int(cnt) < args.filtering_count:
-                print(f"Keyword '{keyword}' has count {cnt} < {args.filtering_count}, skip")
-                continue
-
-            if not name:
-                name = keyword
+        with open(args.target, newline='', encoding='utf-8') as csvfile:
+            seen_urls, seen_urls_file = read_seen_urls_from_file(seen_urls_path)
             
-            args.path_keyword = os.path.join("data", name)
-            if not os.path.exists(args.path_keyword):
-                os.makedirs(args.path_keyword)
-            
-            print(f"Processing name: {name} with keyword: {keyword}")
-            downloaded = 0
-            page = 1
-
-            # Continue paging until the limit is reached.
-            
-            # progress bar
-            pbar = tqdm(total=args.limit, desc=f"Downloading images for '{keyword}'")
-
-            # skip existing data at beginning
-            downloaded, skip_cnt = skip_exisiting_data(args.path_keyword, downloaded, args.limit)
-            pbar.update(skip_cnt)
-            
-            # actual fetching
-            while downloaded < args.limit:
+            reader = csv.DictReader(csvfile)
+            for row in reader: # process each keyword
+                keyword = row.get("keyword")
+                name = row.get("name")
+                cnt = row.get("cnt")
                 
-                retry = 0
-                while retry < max_retry:
-                    image_urls = get_image_urls_from_page(driver, keyword, page)
-                    if len(image_urls) <= 1:
-                        print(f"No images found on page {page} for '{keyword}'. Retry")
-                        retry += 1
-                        if (retry < max_retry):
-                            time.sleep(random.uniform(10, 30))
+                
+                if not keyword:
+                    print("keyword is None, skip")
+                    continue
+
+                if cnt and int(cnt) < args.filtering_count:
+                    print(f"Keyword '{keyword}' has count {cnt} < {args.filtering_count}, skip")
+                    continue
+
+                if not name:
+                    name = keyword
+                
+                args.path_keyword = os.path.join("data", name)
+                if not os.path.exists(args.path_keyword):
+                    os.makedirs(args.path_keyword)
+                
+                print(f"Processing name: {name} with keyword: {keyword}")
+                downloaded = 0
+                page = 1
+
+                # Continue paging until the limit is reached.
+                
+                # progress bar
+                pbar = tqdm(total=args.limit, desc=f"Downloading images for '{keyword}'")
+
+                # skip existing data at beginning
+                downloaded, skip_cnt = skip_exisiting_data(args.path_keyword, downloaded, args.limit)
+                pbar.update(skip_cnt)
+                
+                # actual fetching
+                while downloaded < args.limit:
+                    
+                    retry = 0
+                    while retry < max_retry:
+                        image_urls = get_image_urls_from_page(driver, keyword, page)
+                        if len(image_urls) <= 1:
+                            print(f"No images found on page {page} for '{keyword}'. Retry")
+                            retry += 1
+                            if (retry < max_retry):
+                                time.sleep(random.uniform(10, 30))
+                        else:
+                            break
+                        
+                    if retry == max_retry:
+                        print(f"Failed to fetch images after {max_retry} attempts. Skip.")
+                        skipped = True
+                        break
+
+                    session = requests.Session()
+                    for c in driver.get_cookies():
+                        session.cookies.set(c['name'], c['value'], domain=c['domain'])
+                    
+                    seen_cnt = 0
+                    for url in image_urls:
+                        if url in seen_urls:
+                            seen_cnt += 1
+                            continue
+                        
+                        # skip existing data
+                        downloaded, skip_cnt = skip_exisiting_data(args.path_keyword, downloaded, args.limit)
+                        pbar.update(skip_cnt)
+                        
+                        if downloaded >= args.limit:
+                            break
+                        
+                        # add to seen_urls
+                        seen_urls.add(url)
+                        seen_urls_file.write(url + "\n")
+                        
+                        # save to path/keyword/
+                        ext = get_extension_from_url(url)
+                        filepath = os.path.join(args.path_keyword, f"{downloaded+1}{ext}")
+                        
+                        succeed = try_download_image(session, url, filepath)
+                        
+                        if succeed:
+                            downloaded += 1
+                            pbar.update(1)
+                        
+                        sleep_scheduler(delay)
+                    
+                    # report seen_urls count
+                    if seen_cnt == len(image_urls):
+                        print(f"\nAll images on page {page} for '{keyword}' have been seen. Skip")
+                    elif seen_cnt:
+                        print(f"\nSkipped {seen_cnt} already seen images (but not all) on page {page} for '{keyword}'")
                     else:
-                        break
-                    
-                if retry == max_retry:
-                    print(f"Failed to fetch images after {max_retry} attempts. Skip.")
-                    break
-
-                session = requests.Session()
-                for c in driver.get_cookies():
-                    session.cookies.set(c['name'], c['value'], domain=c['domain'])
+                        print(f"")
+                    page += 1
+                    gc.collect()
                 
-                seen_cnt = 0
-                for url in image_urls:
-                    if url in seen_urls:
-                        seen_cnt += 1
-                        continue
-                    
-                    # skip existing data
-                    downloaded, skip_cnt = skip_exisiting_data(args.path_keyword, downloaded, args.limit)
-                    pbar.update(skip_cnt)
-                    
-                    if downloaded >= args.limit:
-                        break
-                    
-                    # add to seen_urls
-                    seen_urls.add(url)
-                    seen_urls_file.write(url + "\n")
-                    
-                    # save to path/keyword/
-                    ext = get_extension_from_url(url)
-                    filepath = os.path.join(args.path_keyword, f"{downloaded+1}{ext}")
-                    
-                    succeed = try_download_image(session, url, filepath)
-                    
-                    if succeed:
-                        downloaded += 1
-                        pbar.update(1)
-                    
-                    sleep_scheduler(delay)
-                
-                # report seen_urls count
-                if seen_cnt == len(image_urls):
-                    print(f"\nAll images on page {page} for '{keyword}' have been seen. Skip")
-                elif seen_cnt:
-                    print(f"\nSkipped {seen_cnt} already seen images (but not all) on page {page} for '{keyword}'")
-                else:
-                    print(f"")
-                page += 1
-            
-            pbar.close()
-            print("\n")
-    print("> All keywords successfully processed. Quit")
-    driver.quit()
-    exit(0)
+                pbar.close()
+                print("\n")
+        print("> All keywords successfully processed. Quit")
+        if (skipped):
+            raise PageNotReachable("Some keywords were skipped due to failure to fetch images. Please check the log.")
+        driver.quit()
+        seen_urls_file.close()
+    except Exception as e:
+        driver.quit()
+        seen_urls_file.close()
+        time.sleep(10)
+        raise e
 
 def guarder():
     '''
