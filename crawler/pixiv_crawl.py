@@ -24,6 +24,8 @@ options:
                         Filter by the count of illustrations in csv_file(cnt), default 2000
   --always-restart, -ar
                         Restart the script when it accidentally quit
+  --popularity, -pop
+                        Use popularity mode
   
 Remarks:
     1. to fetching more than ten pages, provides username and password
@@ -136,9 +138,12 @@ def mimic_user_interaction(driver : Chrome):
     wait_for_page_load(driver, timeout=60)
     time.sleep(delay_per_page - 5) # Wait for the rest of the delay
     
-def get_image_urls_from_page(driver, keyword, page):
+def get_image_urls_from_page(driver, keyword, page, popularity=False):
     # get page url with no r18
-    base_url = "https://www.pixiv.net/tags/{}/illustrations?p={}&mode=safe"
+    if popularity:
+        base_url = "https://www.pixiv.net/tags/{}/artworks?order=popular_d&s_mode=s_tag&mode=safe&p={}"
+    else:
+        base_url = "https://www.pixiv.net/tags/{}/illustrations?p={}&mode=safe"
     encoded_keyword = urllib.parse.quote(keyword)
     url = base_url.format(encoded_keyword, page)
     print(f"\nFetching: {url}")
@@ -401,7 +406,7 @@ def main(args):
                     
                     retry = 0
                     while retry < max_retry:
-                        image_urls = get_image_urls_from_page(driver, keyword, page)
+                        image_urls = get_image_urls_from_page(driver, keyword, page, args.popularity)
                         if len(image_urls) <= 1:
                             print(f"No images found on page {page} for '{keyword}'. Retry")
                             retry += 1
@@ -486,6 +491,7 @@ def guarder():
     parser.add_argument('--clean', '-c', action='store_true', help="Clean saved seen_urls and cookie")
     parser.add_argument('--filtering-count', '-fc', type=int, default=2000, help="Filter by the count of illustrations in csv_file(cnt)")
     parser.add_argument('--always-restart', '-ar', action='store_true', help="Restart the script when it accidentally quit")
+    parser.add_argument('--popularity', '-pop', action='store_true', help="Use popularity mode")
     
     args = parser.parse_args()
 
@@ -494,9 +500,11 @@ def guarder():
         while True:
             try:
                 main(args)
+                return 0
             except Exception as e:
                 print(f"Error occurred: {e}. Restarting in 10 minutes...")
                 time.sleep(600)
+                args.c = False
     else:
         main(args)
         
