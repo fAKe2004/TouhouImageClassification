@@ -138,7 +138,7 @@ def mimic_user_interaction(driver : Chrome):
     wait_for_page_load(driver, timeout=60)
     time.sleep(delay_per_page - 5) # Wait for the rest of the delay
     
-def get_image_urls_from_page(driver, keyword, page, popularity=False):
+def get_image_urls_from_page(driver, keyword, page, popularity=False, redirect_retry=3):
     # get page url with no r18
     if popularity:
         base_url = "https://www.pixiv.net/tags/{}/artworks?order=popular_d&s_mode=s_tag&mode=safe&p={}"
@@ -154,11 +154,15 @@ def get_image_urls_from_page(driver, keyword, page, popularity=False):
     print(f"Fetching complete")
     
     # Check if the URL is correct (redirect may happen if not logined)
+    redirect_cnt = 0
     while url != driver.current_url:
+        redirect_cnt += 1
         print(f"[Warning]: current URL '{driver.current_url}' have changed")
-        if ("premium" in driver.current_url):
-            driver.get(url)
-            mimic_user_interaction(driver)
+        driver.get(url)
+        mimic_user_interaction(driver)
+        if redirect_cnt >= redirect_retry:
+            print(f"[Error]: URL '{url}' is not reachable after {redirect_retry} attempts")
+            raise PageNotReachable(f"URL '{url}' is not reachable after {redirect_retry} attempts")
 
     imgs = driver.find_elements(By.TAG_NAME, "img")
     image_urls = []
