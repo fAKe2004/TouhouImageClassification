@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Type, Any, Callable, Union, List, Optional
 
-
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
@@ -247,36 +246,41 @@ def _resnet(
     return model
 
 
-def resnet18(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet18(pretrained: bool = False, progress: bool = True, num_classes: int = 1000, **kwargs: Any) -> ResNet:
     """ResNet-18 model from "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>"""
+    kwargs['num_classes'] = num_classes
     return _resnet('resnet18', BasicBlock, [2, 2, 2, 2], pretrained, progress, **kwargs)
 
 
-def resnet34(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet34(pretrained: bool = False, progress: bool = True, num_classes: int = 1000, **kwargs: Any) -> ResNet:
     """ResNet-34 model from "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>"""
+    kwargs['num_classes'] = num_classes
     return _resnet('resnet34', BasicBlock, [3, 4, 6, 3], pretrained, progress, **kwargs)
 
 
-def resnet50(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet50(pretrained: bool = False, progress: bool = True, num_classes: int = 1000, **kwargs: Any) -> ResNet:
     """ResNet-50 model from "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>"""
+    kwargs['num_classes'] = num_classes
     return _resnet('resnet50', Bottleneck, [3, 4, 6, 3], pretrained, progress, **kwargs)
 
 
-def resnet101(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet101(pretrained: bool = False, progress: bool = True, num_classes: int = 1000, **kwargs: Any) -> ResNet:
     """ResNet-101 model from "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>"""
+    kwargs['num_classes'] = num_classes
     return _resnet('resnet101', Bottleneck, [3, 4, 23, 3], pretrained, progress, **kwargs)
 
 
-def resnet152(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet152(pretrained: bool = False, progress: bool = True, num_classes: int = 1000, **kwargs: Any) -> ResNet:
     """ResNet-152 model from "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>"""
+    kwargs['num_classes'] = num_classes
     return _resnet('resnet152', Bottleneck, [3, 8, 36, 3], pretrained, progress, **kwargs)
 
 
 # Example usage (optional, can be removed or placed under if __name__ == '__main__':)
 if __name__ == '__main__':
     # Example: Create a ResNet-50 model for 10 classes
-    num_classes = 10
-    model = resnet50(num_classes=num_classes)
+    num_classes_example = 10
+    model = resnet50(num_classes=num_classes_example)
 
     # Print model summary (optional)
     # print(model)
@@ -284,9 +288,9 @@ if __name__ == '__main__':
     # Example input tensor (batch_size=4, channels=3, height=224, width=224)
     dummy_input = torch.randn(4, 3, 224, 224)
     output = model(dummy_input)
-    print("Output shape:", output.shape) # Should be [4, num_classes]
+    print("Output shape:", output.shape) # Should be [4, num_classes_example]
 
     # Example: Create a ResNet-18 model
-    model18 = resnet18(num_classes=num_classes)
+    model18 = resnet18(num_classes=num_classes_example)
     output18 = model18(dummy_input)
     print("ResNet-18 Output shape:", output18.shape)
