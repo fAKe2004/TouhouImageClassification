@@ -49,6 +49,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.action_chains import ActionChains
 from tqdm import tqdm
+from webdriver_manager.chrome import ChromeDriverManager
+import traceback
 
 # hyper parameters
 sample_scale = 0.5
@@ -249,6 +251,8 @@ def login_to_pixiv(username, password, cookie_path):
     # Wait for the login page to load
     wait_for_page_load(driver, timeout=180)
     time.sleep(2)
+
+    driver.maximize_window()
     
     # Find and fill the username and password fields
     while (True):
@@ -332,6 +336,10 @@ def skip_exisiting_data(path_keyword, downloaded, limit):
     return downloaded, skip_cnt
 
 def main(args):
+
+    # Ensure the data directory exists.
+    if not os.path.exists(args.path):
+        os.makedirs(args.path)
     
     # Precompute paths
     seen_urls_path = os.path.join(args.path, "seen_urls.txt")
@@ -343,13 +351,13 @@ def main(args):
     # Compute delay between downloads (in seconds)
     delay = 60.0 / args.freq
 
-    # Ensure the data directory exists.
-    if not os.path.exists(args.path):
-        os.makedirs(args.path)
+    # Try installing driver
+    ChromeDriverManager().install()
     
     # Get driver
     driver = get_uc_driver(not args.disable_headless)
 
+    seen_urls_file = None
     try:
         if args.username and args.password:
             print("Logging in to Pixiv and save cookies ...")
@@ -388,7 +396,7 @@ def main(args):
                 if not name:
                     name = keyword
                 
-                args.path_keyword = os.path.join("data", name)
+                args.path_keyword = os.path.join(args.path, name)
                 if not os.path.exists(args.path_keyword):
                     os.makedirs(args.path_keyword)
                 
@@ -476,7 +484,8 @@ def main(args):
         seen_urls_file.close()
     except Exception as e:
         driver.quit()
-        seen_urls_file.close()
+        if seen_urls_file is not None:
+            seen_urls_file.close()
         time.sleep(10)
         raise e
 
@@ -506,9 +515,10 @@ def guarder():
                 main(args)
                 return 0
             except Exception as e:
+                traceback.print_exc()
                 print(f"Error occurred: {e}. Restarting in 10 minutes...")
                 time.sleep(600)
-                args.c = False
+                args.clean = False
     else:
         main(args)
         
