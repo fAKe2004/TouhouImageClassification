@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>图像审查系统</title>
+    <script>
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'y') document.getElementById('approve').click()
+            if (key === 'n') document.getElementById('reject').click()
+            if (key === 'b' && {{ can_go_back|lower }}) document.getElementById('back').click()
+        });
+    </script>
+    <style>
+        .container { display: flex; gap: 20px; margin-bottom: 20px; }
+        .image-box { flex: 1; border: 2px solid #ddd; padding: 10px; }
+        .history-panel { background: #f5f5f5; padding: 15px; margin-top: 20px; }
+        img { max-width: 100%; height: auto; }
+        .progress { 
+            height: 20px; 
+            background: #eee; 
+            margin: 10px 0;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        button { 
+            padding: 10px 20px; 
+            margin: 0 5px; 
+            cursor: pointer; 
+        }
+        .back-button { background: #ff9800; }
+    </style>
+</head>
+<body>
+    <h1>图像审查系统</h1>
+    
+    <div class="progress">
+        <div class="progress-bar" style="width: {{ progress }}%"></div>
+        <div class="progress-text">{{ current }} ({{ progress }}%)</div>
+    </div>
+    
+    <p>当前标签：{{ label }} - 图片编号：{{ number }}</p>
+    
+    <div class="container">
+        <div class="image-box">
+            <h2>参考图像</h2>
+            <img src="{{ url_for('static', filename=reference) }}">
+        </div>
+        <div class="image-box">
+            <h2>待审查图像</h2>
+            <img src="{{ url_for('static', filename=image) }}">
+        </div>
+    </div>
+
+    <form method="post">
+        <button type="submit" name="action" value="approve" id="approve">合法 (Y)</button>
+        <button type="submit" name="action" value="reject" id="reject">不合法 (N)</button>
+        {% if can_go_back %}
+        <button type="submit" name="action" value="back" id="back" class="back-button">回退 (B)</button>
+        {% endif %}
+    </form>
+
+    <div class="history-panel">
+        <h3>操作历史（最近5条）</h3>
+        <ul>
+            {% for record in session.history[-5:]|reverse %}
+            <li>{{ record.label }}/{{ record.number }}: {{ record.action }}（{{ record.timestamp }}）</li>
+            {% endfor %}
+        </ul>
+    </div>
+</body>
+</html>
