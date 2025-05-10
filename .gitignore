@@ -174,10 +174,12 @@ cython_debug/
 .pypirc
 
 # data&vsc folder
-data/
-data_old/
+data/*
 .vscode/
-review_progress.json
 
 # debug info
 crawler/debug.html
+data/*
+log/*
+checkpoint/*
+TICdata.zip
