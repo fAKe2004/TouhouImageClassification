@@ -13,8 +13,8 @@ import os
 import argparse
 
 model_checkpoints = {
-    'resnet': 'checkpoint/ResNet_model_14.pth',
-    'vit': 'checkpoint/ViT_model_finetune_10.pth'
+    'resnet': 'checkpoint/ResNet_model_final.pth',
+    'vit': 'checkpoint/ViT_model_finetune_base_final.pth'
 }
 
 def get_model(model_type: str, num_classes: int):

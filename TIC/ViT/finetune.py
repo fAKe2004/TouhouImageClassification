@@ -68,7 +68,7 @@ def train_step(model, data, optimizer, criterion, scaler, scheduler=None): # Add
 
 def validate_step(model, data, criterion):
   model.eval()
-  with torch.no_grad() and torch.amp.autocast("cuda"):
+  with torch.no_grad() and torch.autocast(device_type='cuda', dtype=torch.float16):
     inputs, labels = map(lambda x: x.to("cuda"), data)
     outputs = model(inputs)
     logits = outputs.logits
@@ -129,13 +129,7 @@ def train_model(model: torch.nn.Module,
               scheduler.load_state_dict(latest_scheduler_state)
               logger.info("Loaded scheduler state.")
           elif scheduler and not scheduler_per_epoch:
-              # For per-step schedulers, we might need to manually advance it
-              # This depends heavily on the scheduler type (e.g., linear warmup)
-              # For simplicity here, we might just rely on the saved optimizer state
-              # or require skip_optimizer_load=True if resuming precisely is hard.
               logger.warning("Resuming per-step scheduler state not fully implemented, may restart LR schedule.")
-              # If using get_linear_schedule_with_warmup, its state is tied to optimizer steps,
-              # loading optimizer state might be sufficient, but needs verification.
 
         elif scheduler and scheduler_per_epoch:
           # If skipping optimizer but using per-epoch scheduler, advance scheduler manually
@@ -158,6 +152,7 @@ def train_model(model: torch.nn.Module,
   val_size = dataset_size // 10
   train_size = dataset_size - val_size
   torch.manual_seed(0) # ensure split consistency across runs
+  # train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
   train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
   train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8)
@@ -207,6 +202,8 @@ def train_model(model: torch.nn.Module,
     return avg_train_loss
 
   def validate_loop(epoch):
+    optimizer.zero_grad(set_to_none=True)
+    
     running_val_loss = 0.0
     last_nan_iter = None
     correct_sample = 0
@@ -275,18 +272,20 @@ if __name__ == '__main__':
   # Hyperparameters for ViT (adjust as needed)
   NUM_EPOCHS = 25
 
-  BATCH_SIZE = 64 # ViT often requires smaller batch sizes than ResNet
+  BATCH_SIZE = 30
   LR = 1e-5 # Lower learning rate is common for fine-tuning pretrained transformers
   WEIGHT_DECAY = 0.01 # Weight decay for AdamW
   SKIP_OPTIMIZER_LOAD = False # Set to true to reset optimizer/scheduler state when resuming
   USE_PRETRAINED = True # Use pretrained ViT weights
   SCHEDULER_TYPE = 'linear' # 'linear' or 'cosine' or 'none'
   WARMUP_STEPS = 500 # Number of warmup steps for the scheduler
+  
+  MODEL_NAME = "google/vit-large-patch16-224-in21k"
 
   os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
   SAVE_PATH = os.path.join(CHECKPOINT_DIR, 'ViT_model_finetune_{epoch}.pth')
-  MAX_TOLERANT_EPOCH = 5 # Allow more tolerance for potentially slower convergence
+  MAX_TOLERANT_EPOCH = NUM_EPOCHS # disable early stopping
   LOG_NAME = 'ViT_finetune'
 
   logger = get_logger(LOG_NAME, LOG_DIR)
@@ -307,7 +306,11 @@ if __name__ == '__main__':
   num_classes = len(dataset.classes)
   logger.info(f"Dataset loaded. Number of classes: {num_classes}")
 
-  model = ViT(num_classes=num_classes, pretrained=USE_PRETRAINED).to("cuda")
+  model = ViT(
+    num_classes=num_classes,
+    pretrained=USE_PRETRAINED,
+    model_name=MODEL_NAME
+    ).to("cuda")
   optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
   criterion = torch.nn.CrossEntropyLoss()
 

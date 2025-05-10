@@ -175,7 +175,12 @@ cython_debug/
 
 # data&vsc folder
 data/*
+data/
+crawler/data/
 .vscode/
+
+# debug info
+crawler/debug.html
 log/*
 checkpoint/*
 TICdata.zip

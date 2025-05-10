@@ -3,7 +3,7 @@ from transformers import ViTForImageClassification, ViTConfig
 from TIC.utils.parameter import IMAGE_SIZE, VIT_IMAGE_SIZE
 import torch.nn as nn
 
-def ViT(num_classes: int, pretrained: bool = True) -> ViTForImageClassification:
+def ViT(num_classes: int, pretrained: bool = True, model_name: str = None) -> ViTForImageClassification:
   """
   Loads a Vision Transformer (ViT) model for image classification.
 
@@ -15,7 +15,9 @@ def ViT(num_classes: int, pretrained: bool = True) -> ViTForImageClassification:
   Returns:
       ViTForImageClassification: The ViT model instance.
   """
-  model_name = 'google/vit-base-patch16-224-in21k'
+  # model_name = 'google/vit-base-patch16-224-in21k'
+  if model_name is None:
+    model_name = 'google/vit-large-patch16-224-in21k'
 
   if pretrained:
     # Load pretrained model, adjusting the classifier head for the new number of classes
