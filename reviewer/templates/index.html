@@ -5,8 +5,8 @@
     <script>
         document.addEventListener('keydown', (e) => {
             if (e.key === 'y') document.getElementById('approve').click()
-            if (key === 'n') document.getElementById('reject').click()
-            if (key === 'b' && {{ can_go_back|lower }}) document.getElementById('back').click()
+            if (e.key === 'n') document.getElementById('reject').click()
+            if (e.key === 'b' && {{ can_go_back|lower }}) document.getElementById('back').click()
         });
     </script>
     <style>
@@ -73,7 +73,7 @@
         <h3>操作历史（最近5条）</h3>
         <ul>
             {% for record in session.history[-5:]|reverse %}
-            <li>{{ record.label }}/{{ record.number }}: {{ record.action }}（{{ record.timestamp }}）</li>
+            <li>{{ record[0] }}/{{ record[1] }}: {{ 'Approve' if record[2] else 'Reject' }}</li>
             {% endfor %}
         </ul>
     </div>
