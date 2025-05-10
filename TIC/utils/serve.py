@@ -11,6 +11,7 @@ import torch
 from PIL import Image
 import os
 import argparse
+import tqdm
 
 model_checkpoints = {
     'resnet': 'checkpoint/ResNet_model_14.pth',
@@ -99,18 +100,16 @@ def serve(model, image_tensor, class_to_idx, device: str = 'cuda'):
 
     return predicted_class, confidence.item()
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Serve a model for inference.")
-    parser.add_argument('--model', type=str, required=True, choices=['resnet', 'vit'], help='Type of model to load (resnet/vit).')
-    parser.add_argument('--image', type=str, required=True, help='Path to the input image or directory of images.')
-    parser.add_argument('--weights', type=str, default=None, help='Optional path to model weights file.')
-    parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use (cuda/cpu).')
-    parser.add_argument('-o', '--output', type=str, default='serve.out', help='Output file to save predictions. (only valid for directory input)')
-
-    args = parser.parse_args()
-
-    print(f"Using device: {args.device}")
-
+def init(args):
+    '''
+    Model initialization function.
+    Parameters:
+        args: Command line arguments containing model type, weights path, and device.
+    Returns:
+        model: The loaded model instance.
+        transforms: The image transformation pipeline.
+        class_to_idx: Mapping from class names to indices.
+    '''
     print("Loading class mapping...")
     try:
         class_to_idx = get_class_to_idx(DATA_DIR)
@@ -135,6 +134,88 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error getting transformations: {e}")
         exit(1)
+    
+    return model, transforms, class_to_idx
+
+def full_judge(args):
+    '''
+    Full judgement function.
+    Walk through the directory, predict for every image, and save the results if output is given.
+    '''
+    # Check if the input is a file or directory
+    if os.path.isfile(args.image):
+        print(f"Processing single image: {args.image}")
+        try:
+            image = Image.open(args.image).convert('RGB')
+            image_tensor = transforms(image).unsqueeze(0)
+            predicted_class, confidence = serve(model, image_tensor, class_to_idx, args.device)
+            print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f})")
+        except Exception as e:
+            print(f"Error processing image {args.image}: {e}")
+        return
+
+    # Generate the output file's header
+    if (args.output):
+        with open(args.output, 'w') as f:
+            print(f"filename, predicted_class, confidence, actual_class, correct, path")
+
+    tot = 0
+    cnt = 0
+    correct_cnt = 0
+
+    # Count the number of images
+    for root, dirs, files in os.walk(args.image):
+        for filename in files:
+            if (os.path.splitext(filename)[1].lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']):
+                tot += 1
+    print(f"Total images to process: {tot}")
+    bar = tqdm.tqdm(total=tot, desc="Processing images", unit="image")
+
+    # Walk through the directory
+    for root, dirs, files in os.walk(args.image):
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            label = os.path.basename(root)
+            if os.path.splitext(filename)[1].lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
+                print(f"--- Processing: {filename} ---")
+                try:
+                    image = Image.open(file_path).convert('RGB')
+                    image_tensor = transforms(image).unsqueeze(0)
+                    predicted_class, confidence = serve(model, image_tensor, class_to_idx, args.device)
+                    print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f}) Correct: {predicted_class == label}")
+                    cnt += 1
+                    correct_cnt += (predicted_class == label)
+                    
+                    if args.output:
+                        with open(args.output, 'a') as f:
+                            f.write(f"{filename}, {predicted_class}, {confidence:.4f}, {label}, {predicted_class == label}, {file_path}\n")
+                
+                except Exception as e:
+                    print(f"Error processing image {filename}: {e}")
+                bar.update(1)
+            else:
+                print(f"Skipping non-image file: {filename}")
+    print(f"Total images processed: {cnt}, Correct predictions: {correct_cnt}, Accuracy: {correct_cnt / cnt * 100:.2f}%")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Serve a model for inference.")
+    parser.add_argument('--model', type=str, required=True, choices=['resnet', 'vit'], help='Type of model to load (resnet/vit).')
+    parser.add_argument('--image', type=str, required=True, help='Path to the input image or directory of images.')
+    parser.add_argument('--weights', type=str, default=None, help='Optional path to model weights file.')
+    parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use (cuda/cpu).')
+    parser.add_argument('-o', '--output', type=str, default='serve.out', help='Output file to save predictions. (only valid for directory input)')
+    parser.add_argument('--full', action='store_true', help='Full judgement mode, process all images in the directory.')
+
+    args = parser.parse_args()
+
+    print(f"Using device: {args.device}")
+    model, transforms, class_to_idx = init(args)
+
+    if (args.full):
+        print("Full judgement mode activated.")
+        full_judge(args)
+        exit(0)
 
     if os.path.isfile(args.image):
         print(f"Processing single image: {args.image}")
