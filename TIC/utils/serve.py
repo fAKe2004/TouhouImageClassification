@@ -14,8 +14,9 @@ import argparse
 import tqdm
 
 model_checkpoints = {
-    'resnet': 'checkpoint/ResNet_model_14.pth',
-    'vit': 'checkpoint/ViT_model_finetune_10.pth'
+    'resnet': 'checkpoint/ResNet_model_final.pth',
+    'vit-base': 'checkpoint/ViT_base_finetune_production_epoch10.pth',
+    'vit-large': 'checkpoint/ViT_large_finetune_production_epoch25.pth'
 }
 
 def get_model(model_type: str, num_classes: int):
@@ -29,10 +30,13 @@ def get_model(model_type: str, num_classes: int):
     Returns:
         torch.nn.Module: The model instance.
     """
-    if model_type.lower() == 'resnet':
+    model_type = model_type.lower().replace('_', '-')
+    if model_type == 'resnet':
         return resnet152(num_classes=num_classes)
-    elif model_type.lower() == 'vit':
-        return ViT(num_classes=num_classes, pretrained=False)
+    elif model_type == 'vit-base':
+        return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-base-patch16-224-in21k')
+    elif model_type == 'vit-large':
+        return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-large-patch16-224-in21k')
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -49,9 +53,11 @@ def load_model(model_type: str, num_classes: int, weights_path: str = None, devi
     Returns:
         torch.nn.Module: The loaded model instance.
     """
+    model_type = model_type.lower().replace('_', '-')
     model = get_model(model_type, num_classes)
+    
     if weights_path is None:
-        weights_path = model_checkpoints.get(model_type.lower())
+        weights_path = model_checkpoints.get(model_type)
         if weights_path is None:
             raise ValueError(f"No default checkpoint found for model type: {model_type}")
         print(f"Loading default weights from: {weights_path}")
@@ -200,7 +206,7 @@ def full_judge(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Serve a model for inference.")
-    parser.add_argument('--model', type=str, required=True, choices=['resnet', 'vit'], help='Type of model to load (resnet/vit).')
+    parser.add_argument('--model', type=str, required=True, choices=['resnet', 'vit-base', 'vit-large'], help='Type of model to load (resnet/vit).')
     parser.add_argument('--image', type=str, required=True, help='Path to the input image or directory of images.')
     parser.add_argument('--weights', type=str, default=None, help='Optional path to model weights file.')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use (cuda/cpu).')
