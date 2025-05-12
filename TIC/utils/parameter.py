@@ -6,7 +6,7 @@ CHECKPOINT_DIR = 'checkpoint'
 LOG_DIR = 'log'
 
 def get_image_size(model_type: str):
-  if model_type.lower() == 'vit':
+  if 'vit' in model_type.lower():
     return VIT_IMAGE_SIZE
   else:
     return IMAGE_SIZE

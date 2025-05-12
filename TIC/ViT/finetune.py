@@ -270,7 +270,7 @@ def train_model(model: torch.nn.Module,
 
 if __name__ == '__main__':
   # Hyperparameters for ViT (adjust as needed)
-  NUM_EPOCHS = 25
+  NUM_EPOCHS = 40
 
   BATCH_SIZE = 30
   LR = 1e-5 # Lower learning rate is common for fine-tuning pretrained transformers

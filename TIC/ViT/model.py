@@ -15,8 +15,8 @@ def ViT(num_classes: int, pretrained: bool = True, model_name: str = None) -> Vi
   Returns:
       ViTForImageClassification: The ViT model instance.
   """
-  # model_name = 'google/vit-base-patch16-224-in21k'
   if model_name is None:
+    # model_name = 'google/vit-base-patch16-224-in21k'
     model_name = 'google/vit-large-patch16-224-in21k'
 
   if pretrained:
@@ -35,9 +35,9 @@ def ViT(num_classes: int, pretrained: bool = True, model_name: str = None) -> Vi
       )
   else:
     # Initialize a new model from scratch with the specified configuration
-    config = ViTConfig(
-        image_size=VIT_IMAGE_SIZE[0],
-        num_labels=num_classes
+    config = ViTConfig.from_pretrained(
+      model_name,
+      num_labels=num_classes,
     )
     model = ViTForImageClassification(config)
 
