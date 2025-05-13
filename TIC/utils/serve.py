@@ -143,7 +143,7 @@ def init(args):
     
     return model, transforms, class_to_idx
 
-def full_judge(args):
+def full_judge(model, transforms, class_to_idx, args):
     '''
     Full judgement function.
     Walk through the directory, predict for every image, and save the results if output is given.
@@ -163,7 +163,7 @@ def full_judge(args):
     # Generate the output file's header
     if (args.output):
         with open(args.output, 'w') as f:
-            print(f"filename, predicted_class, confidence, actual_class, correct, path")
+            print(f"filename,predicted_class,confidence,actual_class,correct,path", file=f)
 
     tot = 0
     cnt = 0
@@ -194,7 +194,7 @@ def full_judge(args):
                     
                     if args.output:
                         with open(args.output, 'a') as f:
-                            f.write(f"{filename}, {predicted_class}, {confidence:.4f}, {label}, {predicted_class == label}, {file_path}\n")
+                            f.write(f"{filename},{predicted_class},{confidence:.4f},{label},{predicted_class == label},{file_path}\n")
                 
                 except Exception as e:
                     print(f"Error processing image {filename}: {e}")
@@ -220,7 +220,7 @@ if __name__ == "__main__":
 
     if (args.full):
         print("Full judgement mode activated.")
-        full_judge(args)
+        full_judge(model, transforms, class_to_idx, args)
         exit(0)
 
     if os.path.isfile(args.image):
