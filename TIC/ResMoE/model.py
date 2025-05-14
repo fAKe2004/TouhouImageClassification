@@ -55,6 +55,5 @@ class MoEClassifier(nn.Module):
         gate_weights = torch.scatter(gate_weights, 1, top_k_indeces, top_k_weights)
         
         expert_outputs = torch.stack([expert(features) for expert in self.experts], dim = 1)
-        print(expert_outputs.shape, gate_weights.shape)
         combined_output = torch.bmm(gate_weights.unsqueeze(1), expert_outputs).squeeze(1)
         return combined_output, gate_weights, top_k_indeces
