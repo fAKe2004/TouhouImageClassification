@@ -1,7 +1,7 @@
 NUM_CLASSES = 120
 IMAGE_SIZE = (256, 256)
 VIT_IMAGE_SIZE = (224, 224)
-DATA_DIR = 'data'
+DATA_DIR = 'data/data_filtered_vit_base'
 CHECKPOINT_DIR = 'checkpoint'
 LOG_DIR = 'log'
 

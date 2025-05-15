@@ -6,9 +6,15 @@ import logging
 import os
 import sys
 from typing import Optional
+import argparse
 
 from TIC.utils.preprocess import get_dataset
-from TIC.utils.parameter import *
+from TIC.utils.parameter import (
+    CHECKPOINT_DIR as DEFAULT_CHECKPOINT_DIR,
+    LOG_DIR as DEFAULT_LOG_DIR,
+    DATA_DIR as DEFAULT_DATA_DIR,
+    IMAGE_SIZE as DEFAULT_IMAGE_SIZE
+)
 from TIC.ResNet.model import resnet152, resnet18
 
 def get_logger(name, log_dir='log'):
@@ -93,38 +99,63 @@ def train_model(model: torch.nn.Module,
                 ):
   
   latest_epoch_found = 0
-  for i in range(num_epochs - 1, 0, -1):
+  latest_scheduler_state = None
+
+  for i in range(num_epochs, 0, -1): 
       potential_path = save_path.format(epoch=i)
       if os.path.exists(potential_path):
           latest_epoch_found = i
           break
 
+  start_epoch = 0
   if latest_epoch_found > 0:
-      logger.info(f"Resuming from epoch {latest_epoch_found + 1}")
-      ckpt = torch.load(save_path.format(epoch=latest_epoch_found), weights_only=False)
+      logger.info(f"Resuming from checkpoint for epoch {latest_epoch_found}")
+      checkpoint_path = save_path.format(epoch=latest_epoch_found)
+      ckpt = torch.load(checkpoint_path, map_location='cuda')
+      
+      model_state_dict = None
+      optimizer_state_dict = None
+
       if isinstance(ckpt, tuple):
-        model_state_dict, optimizer_state_dict = ckpt
-        model.load_state_dict(model_state_dict)
-        if not skip_optimizer_load:
-          optimizer.load_state_dict(optimizer_state_dict)
-        elif scheduler:
-          # resume lr for the epoch with scheduler
-          optimizer.step()
-          for i in range(latest_epoch_found):
-            scheduler.step()
-            
+          if len(ckpt) >= 2:
+              model_state_dict = ckpt[0]
+              optimizer_state_dict = ckpt[1]
+          if len(ckpt) >= 3:
+              latest_scheduler_state = ckpt[2]
       else:
-        model.load_state_dict(ckpt)
+          model_state_dict = ckpt
+
+      if model_state_dict:
+          model.load_state_dict(model_state_dict)
+      
+      if not skip_optimizer_load:
+          if optimizer_state_dict:
+              optimizer.load_state_dict(optimizer_state_dict)
+              logger.info("Loaded optimizer state.")
+          if scheduler and latest_scheduler_state:
+              scheduler.load_state_dict(latest_scheduler_state)
+              logger.info("Loaded scheduler state.")
+          elif scheduler and not latest_scheduler_state:
+              logger.warning("Optimizer loaded, but no scheduler state found in checkpoint. Scheduler might not be in sync if it's not StepLR-like.")
+              logger.info(f"Advancing scheduler for {latest_epoch_found} completed epochs as a fallback.")
+              for _ in range(latest_epoch_found):
+                  scheduler.step()
+      elif scheduler:
+          logger.info(f"Skipping optimizer load. Manually advancing scheduler to epoch {latest_epoch_found}")
+          for _ in range(latest_epoch_found):
+              scheduler.step()
+      
+      start_epoch = latest_epoch_found
+      logger.info(f"Model, optimizer, and scheduler states (if applicable) loaded. Resuming training from epoch {start_epoch}.")
+
   else:
       logger.info("Starting training from scratch.")
-  
-  
-  
+      start_epoch = 0
   
   dataset_size = len(dataset)
   val_size = dataset_size // 10
   train_size = dataset_size - val_size
-  torch.manual_seed(0) # ensure split consistency across runs
+  torch.manual_seed(0)
   train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
   train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8)
@@ -185,20 +216,26 @@ def train_model(model: torch.nn.Module,
     avg_val_loss, accuracy = validate_loop(latest_epoch_found - 1)
     logger.info(f'Epoch [Before Training], Validation Loss: {avg_val_loss:.4f}, Accuracy: {accuracy:.2f}%')
     
-  # training by epoch
-  for epoch in range(latest_epoch_found, num_epochs):
+  for epoch in range(start_epoch, num_epochs):
     avg_train_loss = train_loop(epoch)
     
     avg_val_loss, accuracy = validate_loop(epoch)
     
     avg_val_loss_timeline.append(avg_val_loss)
     
-    os.makedirs(os.path.dirname(save_path.format(epoch=epoch)), exist_ok=True)
-    torch.save(
-      (model.state_dict(), optimizer.state_dict()), 
-       save_path.format(epoch=epoch+1))
+    current_epoch_save_path = save_path.format(epoch=epoch + 1)
+    os.makedirs(os.path.dirname(current_epoch_save_path), exist_ok=True)
     
-    logger.info(f"Checkpoint saved to {save_path.format(epoch=epoch)}")
+    checkpoint_data = (
+        model.state_dict(),
+        optimizer.state_dict()
+    )
+    if scheduler:
+        checkpoint_data += (scheduler.state_dict(),)
+        
+    torch.save(checkpoint_data, current_epoch_save_path)
+    
+    logger.info(f"Checkpoint saved to {current_epoch_save_path}")
     logger.info(f'Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Accuracy: {accuracy:.2f}%')
     
     if early_exit(avg_val_loss_timeline, max_tolerant_epoch, logger):
@@ -208,48 +245,71 @@ def train_model(model: torch.nn.Module,
       scheduler.step()
 
 if __name__ == '__main__':
-  # Hyperparameters
-  
-  BATCH_SIZE = 80
-  NUM_EPOCHS = 25
-  LR = 5e-2
-  SKIP_OPTIMIZER_LOAD = True # set to true if you found previous scheduler is not proper
-  
-  os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-  
-  SAVE_PATH = os.path.join(CHECKPOINT_DIR, 'ResNet_model_{epoch}.pth')
-  MAX_TOLERANT_EPOCH = 3
-  LOG_NAME = 'ResNet_train'
+  parser = argparse.ArgumentParser(description="Train a ResNet model.")
 
-  logger = get_logger(LOG_NAME, LOG_DIR)
+  parser.add_argument('--model-type', type=str, default='resnet152', choices=['resnet18', 'resnet152'], help="Type of ResNet model to train.")
+  parser.add_argument('--num-epochs', type=int, default=25, help='Number of training epochs.')
+  parser.add_argument('--batch-size', type=int, default=80, help='Batch size for training and validation.')
+  parser.add_argument('--lr', type=float, default=5e-2, help='Initial learning rate for SGD optimizer.')
+  
+  parser.add_argument('--scheduler-step-size', type=int, default=5, help='Step size for StepLR scheduler.')
+  parser.add_argument('--scheduler-gamma', type=float, default=0.25, help='Gamma factor for StepLR scheduler.')
 
-  logger.info("Starting training script.")
-  logger.info(f"Parameters: BATCH_SIZE={BATCH_SIZE}, IMAGE_SIZE={IMAGE_SIZE}, NUM_EPOCHS={NUM_EPOCHS}, MAX_TOLERANT_EPOCH={MAX_TOLERANT_EPOCH}")
+  parser.add_argument('--load-optimizer-state', action='store_true', help='Load optimizer and scheduler state when resuming (if available). If not set, only model weights are loaded and scheduler is advanced manually.')
+  
+  parser.add_argument('--max-tolerant-epoch', type=int, default=3, help='Max tolerant epochs for early stopping.')
+
+  parser.add_argument('--data-dir', type=str, default=DEFAULT_DATA_DIR, help='Directory containing the dataset.')
+  parser.add_argument('--image-size', type=int, default=DEFAULT_IMAGE_SIZE, help='Image size for preprocessing.')
+  parser.add_argument('--checkpoint-dir', type=str, default=DEFAULT_CHECKPOINT_DIR, help='Directory to save model checkpoints.')
+  parser.add_argument('--checkpoint-name-prefix', type=str, default='ResNet_model', help='Prefix for checkpoint filenames.')
+  parser.add_argument('--log-dir', type=str, default=DEFAULT_LOG_DIR, help='Directory to save logs.')
+  parser.add_argument('--log-name', type=str, default='ResNet_train', help='Name for the log file.')
+
+  args = parser.parse_args()
+
+  skip_optimizer_load_val = not args.load_optimizer_state
+
+  os.makedirs(args.checkpoint_dir, exist_ok=True)
+  save_path_template = os.path.join(args.checkpoint_dir, f'{args.checkpoint_name_prefix}_{{epoch}}.pth')
+  
+  logger = get_logger(args.log_name, args.log_dir)
+
+  logger.info("Starting ResNet training script with parsed arguments.")
+  logger.info(f"Full configuration: {vars(args)}")
+  logger.info(f"Effective skip_optimizer_load: {skip_optimizer_load_val}")
 
   torch.set_default_dtype(torch.float32)
 
-  logger.info(f"Loading dataset from {DATA_DIR}...")
+  logger.info(f"Loading dataset from {args.data_dir} with image size {args.image_size}...")
   dataset = get_dataset( 
-      data_dir=DATA_DIR,
-      image_size=IMAGE_SIZE,
+      data_dir=args.data_dir,
+      image_size=args.image_size,
   )
   num_classes = len(dataset.classes)
   logger.info(f"Dataset loaded. Number of classes: {num_classes}")
   
-  model = resnet152(num_classes=num_classes).to("cuda")
-  optimizer = torch.optim.SGD(model.parameters(), lr=LR)
-  scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.25)
+  if args.model_type == 'resnet152':
+    model = resnet152(num_classes=num_classes).to("cuda")
+  elif args.model_type == 'resnet18':
+    model = resnet18(num_classes=num_classes).to("cuda")
+  else:
+    logger.error(f"Unsupported model type: {args.model_type}")
+    sys.exit(1)
+  logger.info(f"Using model: {args.model_type}")
+    
+  optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
+  scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.scheduler_step_size, gamma=args.scheduler_gamma)
   criterion = torch.nn.CrossEntropyLoss()
   
-
   logger.info("Starting model training...")
   train_model(model, dataset, optimizer, scheduler, criterion,
-              num_epochs=NUM_EPOCHS, 
-              batch_size=BATCH_SIZE,
-              max_tolerant_epoch=MAX_TOLERANT_EPOCH,
-              save_path=SAVE_PATH,
+              num_epochs=args.num_epochs, 
+              batch_size=args.batch_size,
+              max_tolerant_epoch=args.max_tolerant_epoch,
+              save_path=save_path_template,
               logger=logger,
-              skip_optimizer_load=True,
+              skip_optimizer_load=skip_optimizer_load_val,
               )
               
   logger.info("Training finished.")

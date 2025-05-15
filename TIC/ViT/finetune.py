@@ -5,6 +5,7 @@ nohup python -m TIC.ViT.train > train.out 2>&1 &
 import torch
 from torch.utils.data import DataLoader, random_split
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from tqdm import tqdm
 import math
@@ -12,11 +13,17 @@ import logging
 import os
 import sys
 from typing import Optional
-from transformers import get_linear_schedule_with_warmup # Use AdamW and a suitable scheduler for Transformers
+import argparse
+from transformers import get_linear_schedule_with_warmup
 
 from TIC.utils.preprocess import get_dataset
-from TIC.utils.parameter import *
-from TIC.ViT.model import ViT # Import the ViT model
+from TIC.utils.parameter import (
+    CHECKPOINT_DIR as DEFAULT_CHECKPOINT_DIR,
+    LOG_DIR as DEFAULT_LOG_DIR,
+    DATA_DIR as DEFAULT_DATA_DIR,
+    VIT_IMAGE_SIZE as DEFAULT_VIT_IMAGE_SIZE
+)
+from TIC.ViT.model import ViT
 
 def get_logger(name, log_dir='log'):
   """
@@ -51,18 +58,18 @@ def get_logger(name, log_dir='log'):
 
   return logger
 
-def train_step(model, data, optimizer, criterion, scaler, scheduler=None): # Add scheduler for potential step inside
+def train_step(model, data, optimizer, criterion, scaler, scheduler=None):
   model.train()
   optimizer.zero_grad()
   with torch.autocast(device_type='cuda', dtype=torch.float16):
     inputs, labels = map(lambda x: x.to("cuda"), data)
     outputs = model(inputs)
-    logits = outputs.logits # ViT output includes logits
+    logits = outputs.logits
     loss = criterion(logits, labels)
   scaler.scale(loss).backward()
   scaler.step(optimizer)
   scaler.update()
-  if scheduler: # Step the scheduler if it's per-step (like linear warmup)
+  if scheduler:
       scheduler.step()
   return loss.item()
 
@@ -101,12 +108,12 @@ def train_model(model: torch.nn.Module,
                 save_path: str,
                 logger: logging.Logger,
                 skip_optimizer_load: bool = False,
-                scheduler_per_epoch: bool = True # Flag to indicate if scheduler steps per epoch or per step
+                scheduler_per_epoch: bool = True
                 ):
 
   latest_epoch_found = 0
   latest_scheduler_state = None
-  for i in range(num_epochs, 0, -1): # Check from num_epochs down to 1
+  for i in range(num_epochs, 0, -1):
       potential_path = save_path.format(epoch=i)
       if os.path.exists(potential_path):
           latest_epoch_found = i
@@ -114,11 +121,9 @@ def train_model(model: torch.nn.Module,
 
   if latest_epoch_found > 0:
       logger.info(f"Resuming from epoch {latest_epoch_found}")
-      # Load checkpoint with map_location to handle potential device mismatch
       ckpt = torch.load(save_path.format(epoch=latest_epoch_found), map_location='cuda')
       if isinstance(ckpt, tuple) and len(ckpt) >= 2:
         model_state_dict, optimizer_state_dict = ckpt[0], ckpt[1]
-        # Check if scheduler state is saved (optional, added in newer saves)
         if len(ckpt) > 2:
             latest_scheduler_state = ckpt[2]
 
@@ -132,14 +137,11 @@ def train_model(model: torch.nn.Module,
               logger.warning("Resuming per-step scheduler state not fully implemented, may restart LR schedule.")
 
         elif scheduler and scheduler_per_epoch:
-          # If skipping optimizer but using per-epoch scheduler, advance scheduler manually
           logger.info(f"Skipping optimizer load, manually advancing scheduler to epoch {latest_epoch_found}")
-          # Advance the scheduler to the state it would be at the beginning of the resumed epoch
-          # Note: This assumes scheduler.step() was called *after* the epoch completed in the previous run.
           for _ in range(latest_epoch_found):
               scheduler.step()
 
-      else: # Handle older checkpoints or different formats
+      else:
         model.load_state_dict(ckpt)
         logger.warning("Loaded checkpoint only contains model state_dict. Optimizer and scheduler state not loaded.")
       start_epoch = latest_epoch_found
@@ -151,8 +153,7 @@ def train_model(model: torch.nn.Module,
   dataset_size = len(dataset)
   val_size = dataset_size // 10
   train_size = dataset_size - val_size
-  torch.manual_seed(0) # ensure split consistency across runs
-  # train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+  torch.manual_seed(0)
   train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
   train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8)
@@ -166,25 +167,20 @@ def train_model(model: torch.nn.Module,
     if scheduler and scheduler_per_epoch:
       logger.info(f"LR for epoch {epoch + 1}: {scheduler.get_last_lr()[0]:.6e}")
     elif scheduler and not scheduler_per_epoch:
-        # For per-step schedulers, LR changes during the epoch
-        pass # Logging LR might be too verbose here
+        pass
 
     model.train()
     running_train_loss = 0.0
     last_nan_iter = None
     train_pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs} [Train]", file=sys.stdout)
     for i, data in enumerate(train_pbar):
-      # Pass scheduler if it steps per iteration
       current_scheduler = scheduler if not scheduler_per_epoch else None
       loss = train_step(model, data, optimizer, criterion, scaler, current_scheduler)
 
       if math.isnan(loss):
-        # Attempt to recover or log the issue
         logger.warning(f"NaN loss detected at training step {i} in epoch {epoch+1}. Replacing with avg loss.")
-        # Avoid division by zero if it happens on the first step
         loss = running_train_loss / (i + 1) if i > 0 else 0.0
         last_nan_iter = i
-        # Consider stopping or reducing LR if NaNs persist
 
       running_train_loss += loss
       current_avg_loss = running_train_loss / (i + 1)
@@ -192,7 +188,6 @@ def train_model(model: torch.nn.Module,
       postfix_dict = {'loss': f'{current_avg_loss:.4f}'}
       if last_nan_iter is not None:
           postfix_dict['last_nan_iter'] = last_nan_iter
-      # Optionally show current LR for per-step schedulers
       if scheduler and not scheduler_per_epoch:
           postfix_dict['lr'] = f'{optimizer.param_groups[0]["lr"]:.2e}'
 
@@ -220,7 +215,7 @@ def train_model(model: torch.nn.Module,
 
       running_val_loss += loss
       correct_sample += correct
-      total_sample += len(data[1]) # data[1] should be labels
+      total_sample += len(data[1])
       current_avg_loss = running_val_loss / (i + 1)
 
       postfix_dict = {'val_loss': f'{current_avg_loss:.4f}'}
@@ -234,26 +229,22 @@ def train_model(model: torch.nn.Module,
 
   if start_epoch > 0:
     logger.info(f"Validating model from loaded checkpoint (Epoch {start_epoch}) before resuming training...")
-    avg_val_loss, accuracy = validate_loop(start_epoch - 1) # Validate the state *at the end* of the loaded epoch
+    avg_val_loss, accuracy = validate_loop(start_epoch - 1)
     logger.info(f'Epoch [{start_epoch}], Validation Loss: {avg_val_loss:.4f}, Accuracy: {accuracy:.2f}%')
-    # Optionally load past validation losses if needed for early stopping continuity
-    # avg_val_loss_timeline = load_validation_history(...)
 
-  # Training by epoch
   for epoch in range(start_epoch, num_epochs):
     avg_train_loss = train_loop(epoch)
     avg_val_loss, accuracy = validate_loop(epoch)
     avg_val_loss_timeline.append(avg_val_loss)
 
-    # Prepare checkpoint data
     checkpoint_data = (
         model.state_dict(),
         optimizer.state_dict()
     )
-    if scheduler and scheduler_per_epoch: # Only save state for per-epoch schedulers for simplicity
+    if scheduler and scheduler_per_epoch:
         checkpoint_data += (scheduler.state_dict(),)
 
-    current_epoch_save_path = save_path.format(epoch=epoch + 1) # Save as epoch N+1 completed
+    current_epoch_save_path = save_path.format(epoch=epoch + 1)
     os.makedirs(os.path.dirname(current_epoch_save_path), exist_ok=True)
     torch.save(checkpoint_data, current_epoch_save_path)
 
@@ -263,79 +254,98 @@ def train_model(model: torch.nn.Module,
     if early_exit(avg_val_loss_timeline, max_tolerant_epoch, logger):
       break
 
-    # Step the scheduler if it's per-epoch
     if scheduler and scheduler_per_epoch:
-      scheduler.step()
+      if isinstance(scheduler, ReduceLROnPlateau):
+        scheduler.step(avg_val_loss)
+      else:
+        scheduler.step()
 
 
 if __name__ == '__main__':
-  # Hyperparameters for ViT (adjust as needed)
-  NUM_EPOCHS = 40
+  parser = argparse.ArgumentParser(description="Fine-tune a Vision Transformer (ViT) model.")
 
-  BATCH_SIZE = 30
-  LR = 1e-5 # Lower learning rate is common for fine-tuning pretrained transformers
-  WEIGHT_DECAY = 0.01 # Weight decay for AdamW
-  SKIP_OPTIMIZER_LOAD = False # Set to true to reset optimizer/scheduler state when resuming
-  USE_PRETRAINED = True # Use pretrained ViT weights
-  SCHEDULER_TYPE = 'linear' # 'linear' or 'cosine' or 'none'
-  WARMUP_STEPS = 500 # Number of warmup steps for the scheduler
+  parser.add_argument('--num-epochs', type=int, default=40, help='Number of training epochs.')
+  parser.add_argument('--batch-size', type=int, default=30, help='Batch size for training and validation.')
+  parser.add_argument('--lr', type=float, default=1e-5, help='Learning rate.')
+  parser.add_argument('--weight-decay', type=float, default=0.01, help='Weight decay for AdamW optimizer.')
+  parser.add_argument('--skip_optimizer_load', action='store_true', help='Skip loading optimizer/scheduler state when resuming.')
   
-  MODEL_NAME = "google/vit-large-patch16-224-in21k"
+  parser.add_argument('--model-name', type=str, default="google/vit-large-patch16-224-in21k", help='Name of the pretrained ViT model from Hugging Face.')
+  parser.add_argument('--no-use-pretrained', action='store_false', dest='use_pretrained', help="Don't use pretrained ViT weights.")
+  parser.set_defaults(use_pretrained=True)
 
-  os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+  parser.add_argument('--scheduler-type', type=str, default='plateau', choices=['linear', 'plateau', 'none'], help='Type of learning rate scheduler.')
+  parser.add_argument('--warmup-steps', type=int, default=500, help='Number of warmup steps for the linear scheduler.')
+  parser.add_argument('--plateau-factor', type=float, default=0.1, help='Factor by which the learning rate will be reduced for ReduceLROnPlateau scheduler.')
+  parser.add_argument('--plateau-patience', type=int, default=10, help='Number of epochs with no improvement after which learning rate will be reduced for ReduceLROnPlateau.')
 
-  SAVE_PATH = os.path.join(CHECKPOINT_DIR, 'ViT_model_finetune_{epoch}.pth')
-  MAX_TOLERANT_EPOCH = NUM_EPOCHS # disable early stopping
-  LOG_NAME = 'ViT_finetune'
+  parser.add_argument('--max-tolerant-epoch', type=int, default=None, help='Max tolerant epochs for early stopping. If not set, defaults to num_epochs (disabling early stopping).')
 
-  logger = get_logger(LOG_NAME, LOG_DIR)
+  parser.add_argument('--data-dir', type=str, default=DEFAULT_DATA_DIR, help='Directory containing the dataset.')
+  parser.add_argument('--image-size', type=int, default=DEFAULT_VIT_IMAGE_SIZE, help='Image size for ViT model.')
+  parser.add_argument('--checkpoint-dir', type=str, default=DEFAULT_CHECKPOINT_DIR, help='Directory to save model checkpoints.')
+  parser.add_argument('--checkpoint-name', type=str, default='ViT_model_finetune', help='Name prefix for the checkpoint file.')
+  parser.add_argument('--log-dir', type=str, default=DEFAULT_LOG_DIR, help='Directory to save logs.')
+  parser.add_argument('--log-name', type=str, default='ViT_finetune', help='Name for the log file.')
+  
 
-  logger.info("Starting ViT training script.")
-  logger.info(f"Parameters: BATCH_SIZE={BATCH_SIZE}, IMAGE_SIZE={VIT_IMAGE_SIZE}, NUM_EPOCHS={NUM_EPOCHS}, LR={LR}, PRETRAINED={USE_PRETRAINED}")
+  args = parser.parse_args()
 
-  # Use float32 for model weights, autocast handles mixed precision
+  max_tolerant_epoch_val = args.max_tolerant_epoch if args.max_tolerant_epoch is not None else args.num_epochs
+
+  os.makedirs(args.checkpoint_dir, exist_ok=True)
+  save_path_template = os.path.join(args.checkpoint_dir, args.checkpoint_name+'_{epoch}.pth')
+  
+  logger = get_logger(args.log_name, args.log_dir)
+
+  logger.info("Starting ViT fine-tuning script with parsed arguments.")
+  logger.info(f"Full configuration: {vars(args)}")
+  
   torch.set_default_dtype(torch.float32)
 
-  logger.info(f"Loading dataset from {DATA_DIR}...")
-  # Ensure get_dataset provides appropriate normalization for ViT if needed
-  # Often ViT pretrained models expect normalization based on ImageNet stats
+  logger.info(f"Loading dataset from {args.data_dir} with image size {args.image_size}...")
   dataset = get_dataset(
-      data_dir=DATA_DIR,
-      image_size=VIT_IMAGE_SIZE,
+      data_dir=args.data_dir,
+      image_size=args.image_size,
   )
   num_classes = len(dataset.classes)
   logger.info(f"Dataset loaded. Number of classes: {num_classes}")
 
   model = ViT(
     num_classes=num_classes,
-    pretrained=USE_PRETRAINED,
-    model_name=MODEL_NAME
+    pretrained=args.use_pretrained,
+    model_name=args.model_name
     ).to("cuda")
-  optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+  
+  optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
   criterion = torch.nn.CrossEntropyLoss()
 
-  # Calculate total steps for scheduler outside train_model if needed here
-  # Example: num_training_steps = (len(dataset) * (1 - 0.1) // BATCH_SIZE) * NUM_EPOCHS # Approx train steps
-  num_training_steps = (len(dataset) - len(dataset)//10) // BATCH_SIZE * NUM_EPOCHS # More precise estimate
+  dataset_size = len(dataset)
+  val_size = dataset_size // 10
+  train_size = dataset_size - val_size
+  num_training_steps = (train_size // args.batch_size) * args.num_epochs
 
   scheduler = None
-  scheduler_per_epoch = False # Default to per-step scheduler if using one
-  if SCHEDULER_TYPE == 'linear':
-      scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=num_training_steps)
-      logger.info(f"Using linear scheduler with {WARMUP_STEPS} warmup steps and {num_training_steps} total steps.")
+  scheduler_per_epoch = True
+
+  if args.scheduler_type == 'linear':
+      scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=num_training_steps)
+      scheduler_per_epoch = False
+      logger.info(f"Using linear scheduler with {args.warmup_steps} warmup steps and {num_training_steps} total steps.")
+  elif args.scheduler_type == 'plateau':
+      scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.plateau_factor, patience=args.plateau_patience, verbose=True)
+      logger.info(f"Using ReduceLROnPlateau scheduler with factor={args.plateau_factor}, patience={args.plateau_patience}.")
   else:
       logger.info("Not using a learning rate scheduler.")
-      scheduler_per_epoch = True # No scheduler behaves like a per-epoch step (no-op)
-
 
   logger.info("Starting model training...")
   train_model(model, dataset, optimizer, scheduler, criterion,
-              num_epochs=NUM_EPOCHS,
-              batch_size=BATCH_SIZE,
-              max_tolerant_epoch=MAX_TOLERANT_EPOCH,
-              save_path=SAVE_PATH,
+              num_epochs=args.num_epochs,
+              batch_size=args.batch_size,
+              max_tolerant_epoch=max_tolerant_epoch_val,
+              save_path=save_path_template,
               logger=logger,
-              skip_optimizer_load=SKIP_OPTIMIZER_LOAD,
+              skip_optimizer_load=args.skip_optimizer_load,
               scheduler_per_epoch=scheduler_per_epoch
               )
 

@@ -184,3 +184,5 @@ crawler/debug.html
 log/*
 checkpoint/*
 TICdata.zip
+*.zip
+*.pth
