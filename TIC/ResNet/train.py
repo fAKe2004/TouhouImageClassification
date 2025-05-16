@@ -10,6 +10,7 @@ from typing import Optional
 from TIC.utils.preprocess import get_dataset
 from TIC.utils.parameter import *
 from TIC.ResNet.model import resnet152, resnet18
+from TIC.utils.loss_function import SymmetricCrossEntropyLoss
 
 def get_logger(name, log_dir='log'):
   """
@@ -239,7 +240,8 @@ if __name__ == '__main__':
   model = resnet152(num_classes=num_classes).to("cuda")
   optimizer = torch.optim.SGD(model.parameters(), lr=LR)
   scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.25)
-  criterion = torch.nn.CrossEntropyLoss()
+  # criterion = torch.nn.CrossEntropyLoss()
+  criterion = SymmetricCrossEntropyLoss()
   
 
   logger.info("Starting model training...")

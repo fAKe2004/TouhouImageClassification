@@ -17,6 +17,7 @@ from transformers import get_linear_schedule_with_warmup # Use AdamW and a suita
 from TIC.utils.preprocess import get_dataset
 from TIC.utils.parameter import *
 from TIC.ViT.model import ViT # Import the ViT model
+from TIC.utils.loss_function import SymmetricCrossEntropyLoss
 
 def get_logger(name, log_dir='log'):
   """
@@ -312,7 +313,8 @@ if __name__ == '__main__':
     model_name=MODEL_NAME
     ).to("cuda")
   optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-  criterion = torch.nn.CrossEntropyLoss()
+  # criterion = torch.nn.CrossEntropyLoss()
+  criterion = SymmetricCrossEntropyLoss()
 
   # Calculate total steps for scheduler outside train_model if needed here
   # Example: num_training_steps = (len(dataset) * (1 - 0.1) // BATCH_SIZE) * NUM_EPOCHS # Approx train steps

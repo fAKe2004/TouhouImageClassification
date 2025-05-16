@@ -178,6 +178,10 @@ data/*
 data/
 crawler/data/
 .vscode/
+data.zip
+crawler/data.zip
+crawler/data_filtered_vit_base/
+crawler/data_filtered_vit_base.zip
 
 # debug info
 crawler/debug.html
