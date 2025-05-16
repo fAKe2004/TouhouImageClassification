@@ -20,19 +20,20 @@ logger = logging.getLogger(__name__)
 
 def symmetric_cross_entropy(logits, targets, alpha=0.1, beta=1.0):
     ce = F.cross_entropy(logits, targets)
-    reversed_logits = torch.flip(logits, dims=[1])
-    reversed_targets = torch.flip(targets, dims=[1])
-    reversed_ce = F.cross_entropy(reversed_logits, reversed_targets)
-    return alpha * ce + beta * reversed_ce
+    rce = -torch.sum(F.softmax(logits, dim=1) * F.log_softmax(targets, dim=1), dim=1).mean()
+    return alpha * ce + beta * rce
 
 def load_balance_loss(gate_weights, top_k_indeces, num_experts):
-    expert_usages = torch.zeros(num_experts).to(gate_weights.device)
-    for i in range(gate_weights.shape[0]):
-        expert_usages += gate_weights[i]
+    expert_usages = torch.zeros(num_experts).to(top_k_indeces.device)
+    for i, j in enumerate(top_k_indeces):
+        expert_usages[j] += 1
     expert_usage = F.softmax(expert_usages, dim=0)
     return -torch.sum(torch.log(expert_usage + 1e-8))
 
 def total_loss(logits, targets, gate_weights, top_k_indeces, alpha=0.5):
+    assert not torch.isnan(logits).any(), "Logits contains NaN"
+    assert torch.isfinite(logits).all(), "Logits contains Inf"
+
     ce_loss = symmetric_cross_entropy(logits, targets)  
     balance_loss = load_balance_loss(gate_weights, top_k_indeces, gate_weights.shape[1])
     return ce_loss + alpha * balance_loss
@@ -139,7 +140,8 @@ def get_trainer():
         default_root_dir = MOE_ROOT_DIR,
         callbacks = [checkpoint_callback_min, check_point_call_back_last],
         profiler = MOE_PROFILER,
-        precision = 16 if MOE_TRAIN_PRECISION else None,
+        precision = MOE_ENABLE_AMP,
+        accumulate_grad_batches = MOE_ACCUMULATE_GRAD_BATCHES,
     )
 
 
