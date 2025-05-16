@@ -24,11 +24,8 @@ def symmetric_cross_entropy(logits, targets, alpha=0.1, beta=1.0):
     return alpha * ce + beta * rce
 
 def load_balance_loss(gate_weights, top_k_indeces, num_experts):
-    expert_usages = torch.zeros(num_experts).to(top_k_indeces.device)
-    for i, j in enumerate(top_k_indeces):
-        expert_usages[j] += 1
-    expert_usage = F.softmax(expert_usages, dim=0)
-    return -torch.sum(torch.log(expert_usage + 1e-8))
+    avg_expert_usages = torch.mean(gate_weights, dim = 0)
+    return torch.matmul(gate_weights, avg_expert_usages.unsqueeze(1)).squeeze(1).mean()
 
 def total_loss(logits, targets, gate_weights, top_k_indeces, alpha=0.5):
     assert not torch.isnan(logits).any(), "Logits contains NaN"
@@ -59,8 +56,12 @@ class ResMoETrainerModule(L.LightningModule):
         logits, gate_weights, top_k_indeces = self.model(x)
         balance_loss = load_balance_loss(gate_weights, top_k_indeces, gate_weights.shape[1])
         classification_loss = symmetric_cross_entropy(logits, targets)
+
+        pred = torch.argmax(logits, dim = 1)
+        acc = (pred == y).float().mean()
         self.log("val_balance_loss", balance_loss, on_epoch=True, prog_bar=True)
         self.log("val_classification_loss", classification_loss, on_epoch=True, prog_bar=True)
+        self.log("val_accuracy", acc, on_epoch=True, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         x, y = batch
