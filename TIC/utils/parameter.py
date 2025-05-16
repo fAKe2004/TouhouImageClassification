@@ -5,6 +5,7 @@ DATA_DIR = 'data'
 CHECKPOINT_DIR = 'checkpoint'
 TEST_DIR = 'test'
 LOG_DIR = 'log'
+CACHE_DIR = 'cache'
 
 def get_image_size(model_type: str):
   if 'vit' in model_type.lower():
