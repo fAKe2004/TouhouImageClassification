@@ -118,6 +118,7 @@ def get_model():
         pretrained = MOE_PRETRAINED,
         model_name = MOE_EXPERT_MODEL_NAME,
         gate_pretrained = MOE_GATE_PRETRAINED,
+        gateway_t = MOE_GATEWAY_T,
     )
 
 def get_trainer():
