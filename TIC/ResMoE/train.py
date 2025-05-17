@@ -134,6 +134,7 @@ def get_trainer():
         mode = "max",
         dirpath = CHECKPOINT_DIR,
         filename = "checkpoint_ResMoE_{epoch:02d}_{val_classification_loss:.4f}",
+        every_n_epochs = MOE_CHECKPOINT_EVERY_N_EPOCHS,
     )
     return L.Trainer(
         max_epochs = MOE_MAX_EPOCHS,
