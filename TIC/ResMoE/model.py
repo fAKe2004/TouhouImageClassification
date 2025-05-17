@@ -23,21 +23,14 @@ class MLPExpert(nn.Module):
 
 class GatingNetwork(nn.Module):
 
-    def __init__(self, num_experts, top_k):
+    def __init__(self, num_experts, top_k, pretrained = True):
         super(GatingNetwork, self).__init__()
         self.top_k = top_k
         self.num_experts = num_experts
-        self.cnn = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size = 3, stride = 1, padding = 1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-        )
-        self.fc = nn.Linear(32, num_experts)
+        self.vit = vit.ViT(num_classes = num_experts, pretrained=pretrained, model_name='google/vit-base-patch16-224')
 
     def forward(self, x):
-        features = self.cnn(x)
-        logits = self.fc(features)
+        logits = self.vit(x).logits
         top_k_weights, top_k_indeces = torch.topk(logits, k = self.top_k, dim = 1)
         smoothed_weights = torch.softmax(top_k_weights, dim = 1)
         return smoothed_weights, top_k_indeces
@@ -62,7 +55,7 @@ class MoEClassifier(nn.Module):
         combined_output = torch.bmm(gate_weights.unsqueeze(1), expert_outputs).squeeze(1)
         return combined_output, gate_weights, top_k_indeces
 
-def make_ViTMoE(num_classes : int, num_experts : int, top_k : int, pretrained : bool = True, model_name : str | None = None):
+def make_ViTMoE(num_classes : int, num_experts : int, top_k : int, pretrained : bool = True, model_name : str | None = None, gate_pretrained : bool = True):
     return MoEClassifier(
         backbone = nn.Identity(),
         experts = nn.ModuleList([
@@ -71,7 +64,7 @@ def make_ViTMoE(num_classes : int, num_experts : int, top_k : int, pretrained : 
             )
             for _ in range(num_experts)
         ]),
-        gate = GatingNetwork(num_experts = num_experts, top_k = top_k),
+        gate = GatingNetwork(num_experts = num_experts, top_k = top_k, pretrained = gate_pretrained),
         top_k = top_k,
         num_classes = num_classes,
     )

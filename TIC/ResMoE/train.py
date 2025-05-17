@@ -117,6 +117,7 @@ def get_model():
         top_k = MOE_TOP_K,
         pretrained = MOE_PRETRAINED,
         model_name = MOE_EXPERT_MODEL_NAME,
+        gate_pretrained = MOE_GATE_PRETRAINED,
     )
 
 def get_trainer():
