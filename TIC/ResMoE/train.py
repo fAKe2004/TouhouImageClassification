@@ -157,7 +157,7 @@ if __name__ == '__main__':
     torch.set_float32_matmul_precision(MOE_TRAIN_PRECISION)
 
     model = get_model()
-    trainer_module = ResMoETrainerModule(model, optim.Adam(model.parameters(), lr = 1e-3))
+    trainer_module = ResMoETrainerModule(model, optim.SGD(model.parameters(), lr = 5e-2))
     trainer = get_trainer()
     dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
     testset = get_dataset(data_dir = TEST_DIR, image_size = VIT_IMAGE_SIZE)
