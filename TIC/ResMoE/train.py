@@ -148,27 +148,28 @@ def get_trainer():
         accumulate_grad_batches = MOE_ACCUMULATE_GRAD_BATCHES,
     )
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Training script for ResMoE")
     parser.add_argument("--restore", "-r", type=str, default=None, help="Path to the checkpoint to restore, if none is given, will train from scratch")
+    parser.add_argument("--test", '-t', action='store_true', help="Only test the model with --restore given")
     args = parser.parse_args()
+    args.test = args.test if args.restore is not None else False
 
     torch.set_float32_matmul_precision(MOE_TRAIN_PRECISION)
 
     model = get_model()
     trainer_module = ResMoETrainerModule(model, optim.SGD(model.parameters(), lr = 5e-2))
     trainer = get_trainer()
-    dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
+    if not args.test:
+        seed = torch.Generator().manual_seed(42)
+        dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
+        train_set_size = int(len(dataset) * MOE_TRAIN_SPLIT)
+        val_set_size = len(dataset) - train_set_size
+        train_set, valid_set = data.random_split(dataset, [train_set_size, val_set_size], generator = seed)
+        train_loader = data.DataLoader(train_set, batch_size = MOE_BATCH_SIZE, shuffle = True)
+        valid_loader = data.DataLoader(valid_set, batch_size = MOE_BATCH_SIZE, shuffle = False)
+        trainer.fit(trainer_module, train_loader, valid_loader, ckpt_path = args.restore)
+
     testset = get_dataset(data_dir = TEST_DIR, image_size = VIT_IMAGE_SIZE)
-    train_set_size = int(len(dataset) * MOE_TRAIN_SPLIT)
-    val_set_size = len(dataset) - train_set_size
-
-    seed = torch.Generator().manual_seed(42)
-    train_set, valid_set = data.random_split(dataset, [train_set_size, val_set_size], generator = seed)
-
-    train_loader = data.DataLoader(train_set, batch_size = MOE_BATCH_SIZE, shuffle = True)
-    valid_loader = data.DataLoader(valid_set, batch_size = MOE_BATCH_SIZE, shuffle = False)
     test_loader = data.DataLoader(testset, batch_size = MOE_BATCH_SIZE, shuffle = False)
-    trainer.fit(trainer_module, train_loader, valid_loader, ckpt_path = args.restore)
-    trainer.test(trainer_module, test_loader)
+    trainer.test(trainer_module, test_loader, ckpt_path = args.restore if args.test else None)
