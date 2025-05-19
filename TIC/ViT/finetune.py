@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.optim import AdamW
 
 from tqdm import tqdm
+import argparse
 import math
 import logging
 import os
@@ -18,6 +19,7 @@ from TIC.utils.preprocess import get_dataset
 from TIC.utils.parameter import *
 from TIC.ViT.model import ViT # Import the ViT model
 from TIC.utils.loss_function import SymmetricCrossEntropyLoss
+from TIC.utils.serve import full_judge, init
 
 def get_logger(name, log_dir='log'):
   """
@@ -91,6 +93,37 @@ def early_exit(timeline, max_tolerant_epoch, logger):
 
   return False
 
+def full_judge4vit(epoch: int):
+  
+  os.makedirs('full_judge', exist_ok=True)
+  os.makedirs('full_judge/detail', exist_ok=True)
+  os.makedirs('full_judge/test_acc', exist_ok=True)
+  
+  args = argparse.Namespace()
+  args.model = 'vit-large'
+  args.image = 'test'
+  args.weights = f'checkpoint/ViT_model_finetune_{epoch}.pth'
+  args.device = 'cuda'
+  args.output = f'full_judge/detail/server_{epoch}.out'
+  full_judge_dir = f'full_judge/test_acc/server_{epoch}.out'
+  
+  _model, _transforms, _class_to_idx = init(args)
+  ori_stdout = sys.stdout
+  with open(full_judge_dir, 'w') as f_stdout:
+    sys.stdout = f_stdout
+    try:
+      acc = full_judge(_model, _transforms, _class_to_idx, args)
+    except Exception as e:
+      print(f"Error during full_judge execution for epoch {epoch}: {e}", file=sys.stderr) # Print to stderr
+      ori_stdout.write(f"Error during full_judge execution for epoch {epoch}: {e}\n") # Also to original stdout
+    finally:
+      sys.stdout = ori_stdout # Restore original stdout
+      
+  print(f"Full judge accuracy for epoch {epoch}: {acc:.2f}%")
+  if os.path.exists(f'server_{epoch - 5}.out'):
+    os.remove(f'server_{epoch - 5}.out')
+    print(f"Removed old server output: server_{epoch - 5}.out")
+
 def train_model(model: torch.nn.Module,
                 dataset: torch.utils.data.Dataset,
                 optimizer: torch.optim.Optimizer,
@@ -101,6 +134,8 @@ def train_model(model: torch.nn.Module,
                 max_tolerant_epoch: int,
                 save_path: str,
                 logger: logging.Logger,
+                max_save_iter: int, # Number of iterations to save
+                is_augmented: bool,
                 skip_optimizer_load: bool = False,
                 scheduler_per_epoch: bool = True # Flag to indicate if scheduler steps per epoch or per step
                 ):
@@ -155,7 +190,37 @@ def train_model(model: torch.nn.Module,
   torch.manual_seed(0) # ensure split consistency across runs
   # train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
   train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+  
+  if is_augmented:
+    print(f"Train dataset size before augmentation: {len(train_dataset)}")
+    print(f"Val dataset size before augmentation: {len(val_dataset)}")
+    target_train_data = []
+    target_val_data = []
+    
+    # for train_idx in train_dataset.indices:
+    
+    for trainfile_path, trainlabel in train_dataset.dataset.samples:
+      filename, _ = os.path.splitext(os.path.basename(trainfile_path))
+      if filename and filename[-1].isdigit():
+        target_train_data.append((trainfile_path, trainlabel))
+        gray_trainfile_with_suffix = filename + '_gray.jpg'
+        target_train_data.append((gray_trainfile_with_suffix, trainlabel))
+    
+    train_dataset.samples = target_train_data
 
+    for valfile_path, vallabel in val_dataset.dataset.samples:
+      filename, _ = os.path.splitext(os.path.basename(valfile_path))
+      if filename and filename[-1].isdigit():
+        target_val_data.append((valfile_path, vallabel))
+        gray_valfile_with_suffix = filename + '_gray.jpg'
+        target_val_data.append((gray_valfile_with_suffix, vallabel))
+        
+    val_dataset.samples = target_val_data
+        
+    print(f"Train dataset size after augmentation: {len(train_dataset)}")
+    print(f"Val dataset size after augmentation: {len(val_dataset)}")
+    
+    
   train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8)
   val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=8)
 
@@ -257,9 +322,19 @@ def train_model(model: torch.nn.Module,
     current_epoch_save_path = save_path.format(epoch=epoch + 1) # Save as epoch N+1 completed
     os.makedirs(os.path.dirname(current_epoch_save_path), exist_ok=True)
     torch.save(checkpoint_data, current_epoch_save_path)
+    
+        
+    if epoch >= max_save_iter:
+      # Remove older checkpoints if exceeding max save iterations
+      old_epoch_save_path = save_path.format(epoch=epoch-max_save_iter+1)
+      if os.path.exists(old_epoch_save_path):
+          os.remove(old_epoch_save_path)
+          logger.info(f"Removed old checkpoint: {old_epoch_save_path}")
 
     logger.info(f"Checkpoint saved to {current_epoch_save_path}")
     logger.info(f'Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Accuracy: {accuracy:.2f}%')
+    
+    full_judge4vit(epoch + 1)
 
     if early_exit(avg_val_loss_timeline, max_tolerant_epoch, logger):
       break
@@ -280,6 +355,7 @@ if __name__ == '__main__':
   USE_PRETRAINED = True # Use pretrained ViT weights
   SCHEDULER_TYPE = 'linear' # 'linear' or 'cosine' or 'none'
   WARMUP_STEPS = 500 # Number of warmup steps for the scheduler
+  MAX_SAVE_ITER = 5 # Save the last 5 checkpoints
   
   MODEL_NAME = "google/vit-large-patch16-224-in21k"
 
@@ -300,10 +376,25 @@ if __name__ == '__main__':
   logger.info(f"Loading dataset from {DATA_DIR}...")
   # Ensure get_dataset provides appropriate normalization for ViT if needed
   # Often ViT pretrained models expect normalization based on ImageNet stats
+  
+  ALL_AUGMENTED_INCLUDED = False # Set to True if using all augmented dataset
+  IS_AUGMENTED_IN_TRAIN = True # NEVER SET BOTH TO TRUE
   dataset = get_dataset(
       data_dir=DATA_DIR,
       image_size=VIT_IMAGE_SIZE,
   )
+  print(f"Dataset size: {len(dataset)}")
+  if ALL_AUGMENTED_INCLUDED:
+    target_data = []
+    for filepath, label in dataset.samples:
+      filename, _ = os.path.splitext(os.path.basename(filepath))
+      if filename and filename[-1].isdigit():
+        target_data.append((filepath, label))
+    
+    dataset.samples = target_data
+    
+  print(f"Filtered dataset size: {len(dataset)}")
+  
   num_classes = len(dataset.classes)
   logger.info(f"Dataset loaded. Number of classes: {num_classes}")
 
@@ -313,8 +404,8 @@ if __name__ == '__main__':
     model_name=MODEL_NAME
     ).to("cuda")
   optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-  # criterion = torch.nn.CrossEntropyLoss()
-  criterion = SymmetricCrossEntropyLoss()
+  criterion = torch.nn.CrossEntropyLoss()
+  # criterion = SymmetricCrossEntropyLoss()
 
   # Calculate total steps for scheduler outside train_model if needed here
   # Example: num_training_steps = (len(dataset) * (1 - 0.1) // BATCH_SIZE) * NUM_EPOCHS # Approx train steps
@@ -337,6 +428,8 @@ if __name__ == '__main__':
               max_tolerant_epoch=MAX_TOLERANT_EPOCH,
               save_path=SAVE_PATH,
               logger=logger,
+              max_save_iter=MAX_SAVE_ITER,
+              is_augmented= IS_AUGMENTED_IN_TRAIN,
               skip_optimizer_load=SKIP_OPTIMIZER_LOAD,
               scheduler_per_epoch=scheduler_per_epoch
               )

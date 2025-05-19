@@ -202,6 +202,7 @@ def full_judge(model, transforms, class_to_idx, args):
             else:
                 print(f"Skipping non-image file: {filename}")
     print(f"Total images processed: {cnt}, Correct predictions: {correct_cnt}, Accuracy: {correct_cnt / cnt * 100:.2f}%")
+    return correct_cnt / cnt * 100
 
 
 if __name__ == "__main__":
