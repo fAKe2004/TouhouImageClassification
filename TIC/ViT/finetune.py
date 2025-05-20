@@ -5,6 +5,7 @@ nohup python -m TIC.ViT.train > train.out 2>&1 &
 import torch
 from torch.utils.data import DataLoader, random_split
 from torch.optim import AdamW
+import gc
 
 from tqdm import tqdm
 import argparse
@@ -342,13 +343,19 @@ def train_model(model: torch.nn.Module,
     # Step the scheduler if it's per-epoch
     if scheduler and scheduler_per_epoch:
       scheduler.step()
+      
+    gc.collect() 
+    torch.cuda.empty_cache()
+    
+    print(f"GPU memory cached (after epoch {epoch+1} cleanup): {torch.cuda.memory_cached() / 1024**2:.2f} MB")
+    print(f"GPU memory allocated (after epoch {epoch+1} cleanup): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
 
 
 if __name__ == '__main__':
   # Hyperparameters for ViT (adjust as needed)
   NUM_EPOCHS = 40
 
-  BATCH_SIZE = 30
+  BATCH_SIZE = 15 # 30 originally
   LR = 1e-5 # Lower learning rate is common for fine-tuning pretrained transformers
   WEIGHT_DECAY = 0.01 # Weight decay for AdamW
   SKIP_OPTIMIZER_LOAD = False # Set to true to reset optimizer/scheduler state when resuming
@@ -404,8 +411,8 @@ if __name__ == '__main__':
     model_name=MODEL_NAME
     ).to("cuda")
   optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-  criterion = torch.nn.CrossEntropyLoss()
-  # criterion = SymmetricCrossEntropyLoss()
+  # criterion = torch.nn.CrossEntropyLoss()
+  criterion = SymmetricCrossEntropyLoss()
 
   # Calculate total steps for scheduler outside train_model if needed here
   # Example: num_training_steps = (len(dataset) * (1 - 0.1) // BATCH_SIZE) * NUM_EPOCHS # Approx train steps
