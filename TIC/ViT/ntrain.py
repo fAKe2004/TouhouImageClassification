@@ -110,7 +110,7 @@ if __name__ == '__main__':
     LR = 1e-5
     WEIGHT_DECAY = 0.01
     FULL_FINETUNE = False
-    BATCH_SIZE = 8
+    BATCH_SIZE = 16
     NUM_WORKERS = 8
     TRAIN_SPLIT = 0.8
     TRAIN_ID = "nViT"
