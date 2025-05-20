@@ -131,10 +131,10 @@ def get_trainer(slogan : str, max_epochs : int | None = None):
     )
 
 def auto_train(model : nn.Module, slogan : str, dataset : data.Dataset, testset : data.Dataset, restore : str | None = None, max_epochs : int | None = None):
-    trainer = get_trainer(slogan = slogan, max_epochs)
+    trainer = get_trainer(slogan = slogan, max_epochs = max_epochs)
     train_size = int(len(dataset) * TREEVIT_TRAIN_SET_SIZE)
     val_size = len(dataset) - train_size
-    train_set, val_set = data.random_split(category_dataset, [train_size, val_size])
+    train_set, val_set = data.random_split(dataset, [train_size, val_size])
     trainer_module = CommonTrainerModule(model, optim.Adam(model.parameters(), lr = 1e-3), slogan)
     trainer.fit(trainer_module, train_set, val_set, ckpt_path = restore)
     trainer.test(trainer_module, testset)
