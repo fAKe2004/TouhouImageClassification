@@ -1,4 +1,5 @@
 import os.path
+import argparse
 
 import torch
 import torch.nn as nn
@@ -15,14 +16,14 @@ from .model import ViT
 class ViTLModule(L.LightningModule):
 
     def __init__(self, num_classes : int,
-                 pretrianed : bool,
+                 pretrained : bool,
                  model_name : str,
                  lr : float,
                  weight_decay : float,
                  full_finetune: bool = True):
         super().__init__()
         self.num_classes = num_classes
-        self.vit = ViT(num_classes, pretrianed, model_name)
+        self.vit = ViT(num_classes, pretrained, model_name)
         self.lr = lr
         self.weight_decay = weight_decay
         self.cutmix_or_mixup = v2.RandomChoice([
@@ -105,12 +106,17 @@ class AugmentedDataset(L.LightningDataModule):
         return torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=8)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--restore', '-r', type = str, default = None, help = 'Path to the checkpoint to restore')
+    parser.add_argument('--test', '-t', action='store_true', help = 'Only test model without training')
+    args = parser.parse_args()
+
     PRETRAINED = True
     MODEL_NAME = 'google/vit-large-patch16-224'
     LR = 1e-5
     WEIGHT_DECAY = 0.01
-    FULL_FINETUNE = False
-    BATCH_SIZE = 16
+    FULL_FINETUNE = True
+    BATCH_SIZE = 8
     NUM_WORKERS = 8
     TRAIN_SPLIT = 0.8
     TRAIN_ID = "nViT"
@@ -149,4 +155,7 @@ if __name__ == '__main__':
         default_root_dir = f"log/{TRAIN_ID}"
     )
 
-    trainer.fit(lmodel, datamodule = data)
+    if not args.test:
+        trainer.fit(lmodel, datamodule = data, ckpt_path = args.restore)
+    
+    trainer.test(lmodel, datamodule = data, ckpt_path = args.restore)
