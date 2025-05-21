@@ -71,6 +71,7 @@ class AugmentedDataset(L.LightningDataModule):
         self.batch_size = batch_size
         self.image_size = image_size
         self.train_split = train_split
+        self.num_workers = num_workers
 
     def setup(self, stage : str):
         if stage == 'fit':
@@ -97,13 +98,13 @@ class AugmentedDataset(L.LightningDataModule):
             self.test_dataset = datasets.ImageFolder(self.test_path, transform = transform)
 
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8)
+        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
 
     def val_dataloader(self):
-        return torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=8)
+        return torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
 
     def test_dataloader(self):
-        return torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=8)
+        return torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -117,7 +118,7 @@ if __name__ == '__main__':
     WEIGHT_DECAY = 0.01
     FULL_FINETUNE = True
     BATCH_SIZE = 8
-    NUM_WORKERS = 8
+    NUM_WORKERS = 0
     TRAIN_SPLIT = 0.8
     TRAIN_ID = "nViT"
     DATA_DIR = "data_filtered_vit_base"
@@ -159,4 +160,4 @@ if __name__ == '__main__':
     if not args.test:
         trainer.fit(lmodel, datamodule = data, ckpt_path = args.restore)
     
-    trainer.test(lmodel, datamodule = data, ckpt_path = args.restore)
+    trainer.test(lmodel, datamodule = data, ckpt_path = args.restore if args.test else None)
