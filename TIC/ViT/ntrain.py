@@ -121,6 +121,7 @@ if __name__ == '__main__':
     TRAIN_SPLIT = 0.8
     TRAIN_ID = "nViT"
     DATA_DIR = "data_filtered_vit_base"
+    MAX_EPOCHS = 20
 
     torch.set_float32_matmul_precision('high')
 
@@ -130,7 +131,7 @@ if __name__ == '__main__':
     data = AugmentedDataset(DATA_DIR, TEST_DIR, BATCH_SIZE, TRAIN_SPLIT, NUM_WORKERS)
 
     trainer = L.Trainer(
-        max_epochs=10,
+        max_epochs=MAX_EPOCHS,
         callbacks = [
             Lc.ModelCheckpoint(
                 monitor='val_acc', 
