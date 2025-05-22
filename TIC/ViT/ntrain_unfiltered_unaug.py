@@ -118,7 +118,7 @@ if __name__ == '__main__':
     WEIGHT_DECAY = 0.01
     FULL_FINETUNE = True
     BATCH_SIZE = 8
-    NUM_WORKERS = 0
+    NUM_WORKERS = 4
     TRAIN_SPLIT = 0.8
     TRAIN_ID = "nViT_unfiltered_unaug"
     DATA_DIR = "data"
