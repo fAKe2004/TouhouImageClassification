@@ -10,7 +10,7 @@ if __name__ == '__main__':
         BATCH_SIZE = 8,
         NUM_WORKERS = 4,
         TRAIN_SPLIT = 0.8,
-        DATA_DIR = "data_unfiltered_vit_base",
+        DATA_DIR = "data",
         MAX_EPOCHS = 20,
         ENABLE_MIX_UP = False,
         ENABLE_AUGMENTATION = False,
