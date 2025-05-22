@@ -20,6 +20,7 @@ class ViTLModule(L.LightningModule):
                  model_name : str,
                  lr : float,
                  weight_decay : float,
+                 enable_mixup : bool = True,
                  full_finetune: bool = True):
         super().__init__()
         self.num_classes = num_classes
@@ -30,6 +31,7 @@ class ViTLModule(L.LightningModule):
             v2.CutMix(num_classes = num_classes),
             v2.MixUp(num_classes = num_classes),
         ])
+        self.enable_mixup = enable_mixup
         if not full_finetune:
             for param in self.vit.base_model.parameters():
                 param.requires_grad = False
@@ -40,7 +42,8 @@ class ViTLModule(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        x, y = self.cutmix_or_mixup(x, y)
+        if self.enable_mixup:
+            x, y = self.cutmix_or_mixup(x, y)
         logits = self.vit(x).logits
         loss = F.cross_entropy(logits, y)
         self.log('train_loss', loss, prog_bar=True)
@@ -64,7 +67,7 @@ class ViTLModule(L.LightningModule):
 
 class AugmentedDataset(L.LightningDataModule):
 
-    def __init__(self, train_path : str = DATA_DIR, test_path : str = TEST_DIR, batch_size : int = 8, train_split : float = 0.8, num_workers : int = 8, image_size = VIT_IMAGE_SIZE):
+    def __init__(self, train_path : str = DATA_DIR, test_path : str = TEST_DIR, batch_size : int = 8, train_split : float = 0.8, num_workers : int = 8, image_size = VIT_IMAGE_SIZE, enable_augmentation : bool = True):
         super().__init__()
         self.train_path = train_path
         self.test_path = test_path
@@ -72,18 +75,25 @@ class AugmentedDataset(L.LightningDataModule):
         self.image_size = image_size
         self.train_split = train_split
         self.num_workers = num_workers
+        self.enable_augmentation = enable_augmentation
 
     def setup(self, stage : str):
         if stage == 'fit':
-            transform = v2.Compose([
-                v2.RandomResizedCrop(self.image_size),          
-                v2.RandomHorizontalFlip(),         
-                v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  
-                v2.RandomGrayscale(p=0.2),
-                v2.RandomErasing(p=0.5),
-                v2.ToTensor(),                     
-                v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
+            if self.enable_augmentation:
+                transform = v2.Compose([
+                    v2.RandomResizedCrop(self.image_size),          
+                    v2.RandomHorizontalFlip(),         
+                    v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  
+                    v2.RandomGrayscale(p=0.2),
+                    v2.RandomErasing(p=0.5),
+                    v2.ToTensor(),                     
+                    v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
+            else:
+                transform = v2.Compose([
+                    v2.ToTensor(),
+                    v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
             self.dataset = datasets.ImageFolder(self.train_path, transform = transform)
             train_size = int(len(self.dataset) * self.train_split)
             val_size = len(self.dataset) - train_size
@@ -106,30 +116,48 @@ class AugmentedDataset(L.LightningDataModule):
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
 
-if __name__ == '__main__':
+def train_main(
+        PRETRAINED : bool,
+        MODEL_NAME : str,
+        LR : float,
+        WEIGHT_DECAY : float,
+        FULL_FINETUNE : bool,
+        BATCH_SIZE : int,
+        NUM_WORKERS : int,
+        TRAIN_SPLIT : float,
+        DATA_DIR : str,
+        MAX_EPOCHS : int,
+        ENABLE_MIX_UP : bool,
+        ENABLE_AUGMENTATION : bool,
+        TRAIN_ID : str,
+):
     parser = argparse.ArgumentParser()
     parser.add_argument('--restore', '-r', type = str, default = None, help = 'Path to the checkpoint to restore')
     parser.add_argument('--test', '-t', action='store_true', help = 'Only test model without training')
     args = parser.parse_args()
 
-    PRETRAINED = True
-    MODEL_NAME = 'google/vit-large-patch16-224'
-    LR = 1e-5
-    WEIGHT_DECAY = 0.01
-    FULL_FINETUNE = True
-    BATCH_SIZE = 8
-    NUM_WORKERS = 0
-    TRAIN_SPLIT = 0.8
-    TRAIN_ID = "nViT"
-    DATA_DIR = "data_filtered_vit_base"
-    MAX_EPOCHS = 20
-
     torch.set_float32_matmul_precision('high')
 
     L.seed_everything(42)
 
-    lmodel = ViTLModule(NUM_CLASSES, PRETRAINED, MODEL_NAME, LR, WEIGHT_DECAY, FULL_FINETUNE)
-    data = AugmentedDataset(DATA_DIR, TEST_DIR, BATCH_SIZE, TRAIN_SPLIT, NUM_WORKERS)
+    lmodel = ViTLModule(
+        num_classes = NUM_CLASSES, 
+        pretrained = PRETRAINED, 
+        model_name = MODEL_NAME, 
+        lr = LR, 
+        weight_decay = WEIGHT_DECAY, 
+        enable_mixup=ENABLE_MIX_UP, 
+        full_finetune=FULL_FINETUNE,
+    )
+    data = AugmentedDataset(
+        train_path = DATA_DIR, 
+        test_path=TEST_DIR, 
+        batch_size=BATCH_SIZE, 
+        train_split=TRAIN_SPLIT, 
+        num_workers=NUM_WORKERS, 
+        image_size=VIT_IMAGE_SIZE, 
+        enable_augmentation=ENABLE_AUGMENTATION,
+    )
 
     trainer = L.Trainer(
         max_epochs=MAX_EPOCHS,
@@ -161,3 +189,20 @@ if __name__ == '__main__':
         trainer.fit(lmodel, datamodule = data, ckpt_path = args.restore)
     
     trainer.test(lmodel, datamodule = data, ckpt_path = args.restore if args.test else None)
+
+if __name__ == '__main__':
+    train_main(
+        PRETRAINED = True,
+        MODEL_NAME = 'google/vit-large-patch16-224',
+        LR = 1e-5,
+        WEIGHT_DECAY = 0.01,
+        FULL_FINETUNE = True,
+        BATCH_SIZE = 8,
+        NUM_WORKERS = 4,
+        TRAIN_SPLIT = 0.8,
+        TRAIN_ID = "nViT",
+        DATA_DIR = "data_filtered_vit_base",
+        MAX_EPOCHS = 20,
+        ENABLE_MIX_UP = True,
+        ENABLE_AUGMENTATION = True,
+    )
