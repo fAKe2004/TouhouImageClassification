@@ -136,6 +136,7 @@ def train_main(
     parser = argparse.ArgumentParser()
     parser.add_argument('--restore', '-r', type = str, default = None, help = 'Path to the checkpoint to restore')
     parser.add_argument('--test', '-t', action='store_true', help = 'Only test model without training')
+    parser.add_argument('--transform', '-tr', type = str, default = None, help = 'Transform the checkpoint')
     args = parser.parse_args()
 
     torch.set_float32_matmul_precision('high')
@@ -151,6 +152,15 @@ def train_main(
         enable_mixup=ENABLE_MIX_UP, 
         full_finetune=FULL_FINETUNE,
     )
+
+    if args.transform:
+        if not args.restore:
+            print("No checkpoint to transform")
+            exit(-1)
+        lmodel.load_from_checkpoint(args.restore)
+        torch.save(lmodel.vit.state_dict(), args.transform)
+        exit(0)
+
     data = AugmentedDataset(
         train_path = DATA_DIR, 
         test_path=TEST_DIR, 
