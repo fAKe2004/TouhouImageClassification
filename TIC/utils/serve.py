@@ -216,7 +216,7 @@ def full_judge(model, transforms, class_to_idx, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Serve a model for inference.")
-    parser.add_argument('--model', type=str, required=True, choices=['resnet', 'vit-base', 'vit-large'], help='Type of model to load (resnet/vit).')
+    parser.add_argument('--model', type=str, required=True, choices=['resnet', 'vit-base', 'vit-large', 'nvit', 'resmoe'], help='Type of model to load (resnet/vit/nvit/resmoe).')
     parser.add_argument('--image', type=str, required=True, help='Path to the input image or directory of images.')
     parser.add_argument('--weights', type=str, default=None, help='Optional path to model weights file.')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use (cuda/cpu).')
