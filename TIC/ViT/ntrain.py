@@ -131,6 +131,7 @@ def train_main(
         ENABLE_MIX_UP : bool,
         ENABLE_AUGMENTATION : bool,
         TRAIN_ID : str,
+        PATIENCE : int = 3,
 ):
     parser = argparse.ArgumentParser()
     parser.add_argument('--restore', '-r', type = str, default = None, help = 'Path to the checkpoint to restore')
@@ -178,7 +179,7 @@ def train_main(
                 dirpath = os.path.join(CHECKPOINT_DIR, TRAIN_ID),
                 filename = "checkpoint_%s_{epoch:02d}_{val_acc:.4f}" % (TRAIN_ID),
             ),
-            Lc.EarlyStopping(monitor='val_acc', mode='max', patience=3),
+            Lc.EarlyStopping(monitor='val_acc', mode='max', patience=PATIENCE) if PATIENCE > 0 else Lc.Callback(),
         ],
         accelerator='gpu' if torch.cuda.is_available() else 'cpu',
         devices=1,
