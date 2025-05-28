@@ -10,8 +10,8 @@ if __name__ == '__main__':
     BATCH_SIZE = 8
     NUM_WORKERS = 4
     TRAIN_SPLIT = 0.8
-    TRAIN_ID = "nViT_unfiltered"
-    DATA_DIR = "data"
+    TRAIN_ID = "nViT_grey"
+    DATA_DIR = "data_filtered"
     MAX_EPOCHS = 20
     ENABLE_MIX_UP = True
     ENABLE_AUGMENTATION = True
