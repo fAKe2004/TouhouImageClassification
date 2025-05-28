@@ -67,7 +67,7 @@ class ViTLModule(L.LightningModule):
 
 class AugmentedDataset(L.LightningDataModule):
 
-    def __init__(self, train_path : str = DATA_DIR, test_path : str = TEST_DIR, batch_size : int = 8, train_split : float = 0.8, num_workers : int = 8, image_size = VIT_IMAGE_SIZE, enable_augmentation : bool = True):
+    def __init__(self, train_path : str = DATA_DIR, test_path : str = TEST_DIR, batch_size : int = 8, train_split : float = 0.8, num_workers : int = 8, image_size = VIT_IMAGE_SIZE, enable_augmentation : bool = True, only_grey_augmentation : bool = False):
         super().__init__()
         self.train_path = train_path
         self.test_path = test_path
@@ -76,19 +76,28 @@ class AugmentedDataset(L.LightningDataModule):
         self.train_split = train_split
         self.num_workers = num_workers
         self.enable_augmentation = enable_augmentation
+        self.only_grey_augmentation = only_grey_augmentation
 
     def setup(self, stage : str):
         if stage == 'fit':
             if self.enable_augmentation:
-                transform = v2.Compose([
-                    v2.RandomResizedCrop(self.image_size),          
-                    v2.RandomHorizontalFlip(),         
-                    v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  
-                    v2.RandomGrayscale(p=0.2),
-                    v2.RandomErasing(p=0.5),
-                    v2.ToTensor(),                     
-                    v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                ])
+                if self.only_grey_augmentation:
+                    transform = v2.Compose([
+                        v2.Resize(self.image_size),
+                        v2.RandomGrayscale(p=0.2),
+                        v2.ToTensor(),                     
+                        v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                    ])
+                else:
+                    transform = v2.Compose([
+                        v2.RandomResizedCrop(self.image_size),          
+                        v2.RandomHorizontalFlip(),         
+                        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  
+                        v2.RandomGrayscale(p=0.2),
+                        v2.RandomErasing(p=0.5),
+                        v2.ToTensor(),                     
+                        v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                    ])
             else:
                 transform = v2.Compose([
                     v2.Resize(self.image_size),
@@ -132,6 +141,7 @@ def train_main(
         ENABLE_AUGMENTATION : bool,
         TRAIN_ID : str,
         PATIENCE : int = 3,
+        ONLY_GREY_AUGMENTATION : bool = False,
 ):
     parser = argparse.ArgumentParser()
     parser.add_argument('--restore', '-r', type = str, default = None, help = 'Path to the checkpoint to restore')
@@ -143,6 +153,14 @@ def train_main(
 
     L.seed_everything(42)
 
+    if args.transform:
+        if not args.restore:
+            print("No checkpoint to transform")
+            exit(-1)
+        lmodel = ViTLModule.load_from_checkpoint(args.restore, num_classes = NUM_CLASSES, pretrained = PRETRAINED, model_name = MODEL_NAME, lr = LR, weight_decay = WEIGHT_DECAY, enable_mixup=ENABLE_MIX_UP, full_finetune=FULL_FINETUNE)
+        torch.save(lmodel.vit.state_dict(), args.transform)
+        exit(0)
+
     lmodel = ViTLModule(
         num_classes = NUM_CLASSES, 
         pretrained = PRETRAINED, 
@@ -153,14 +171,6 @@ def train_main(
         full_finetune=FULL_FINETUNE,
     )
 
-    if args.transform:
-        if not args.restore:
-            print("No checkpoint to transform")
-            exit(-1)
-        lmodel.load_from_checkpoint(args.restore)
-        torch.save(lmodel.vit.state_dict(), args.transform)
-        exit(0)
-
     data = AugmentedDataset(
         train_path = DATA_DIR, 
         test_path=TEST_DIR, 
@@ -169,6 +179,7 @@ def train_main(
         num_workers=NUM_WORKERS, 
         image_size=VIT_IMAGE_SIZE, 
         enable_augmentation=ENABLE_AUGMENTATION,
+        only_grey_augmentation=ONLY_GREY_AUGMENTATION,
     )
 
     trainer = L.Trainer(
