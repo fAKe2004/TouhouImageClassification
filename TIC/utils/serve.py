@@ -4,6 +4,8 @@ python -m TIC.utils.serve --model vit --image data/伊吹萃香
 
 from TIC.ResNet.model import resnet152
 from TIC.ViT.model import ViT
+from TIC.ViT.ntrain import ViTLModule
+from TIC.ResMoE.train import ResMoETrainerModule
 from TIC.utils.parameter import *
 from TIC.utils.preprocess import get_transforms, get_class_to_idx
 
@@ -16,7 +18,9 @@ import tqdm
 model_checkpoints = {
     'resnet': 'checkpoint/ResNet_model_final.pth',
     'vit-base': 'checkpoint/ViT_base_finetune_production_epoch10.pth',
-    'vit-large': 'checkpoint/ViT_large_finetune_production_epoch25.pth'
+    'vit-large': 'checkpoint/ViT_large_finetune_production_epoch25.pth',
+    'nvit': 'checkpoint/nViT.ckpt',
+    'resmoe': 'checkpoint/ResMoE.ckpt'
 }
 
 def get_model(model_type: str, num_classes: int):
@@ -53,24 +57,30 @@ def load_model(model_type: str, num_classes: int, weights_path: str = None, devi
     Returns:
         torch.nn.Module: The loaded model instance.
     """
-    model_type = model_type.lower().replace('_', '-')
-    model = get_model(model_type, num_classes)
-    
-    if weights_path is None:
-        weights_path = model_checkpoints.get(model_type)
+    if model_type == 'nvit':
+        model = ViTLModule.load_from_checkpoint(weights_path).vit
+    elif model_type == 'resmoe':
+        model = ResMoETrainerModule.load_from_checkpoint(weights_path).model
+    else:
+        model_type = model_type.lower().replace('_', '-')
+        model = get_model(model_type, num_classes)
+        
         if weights_path is None:
-            raise ValueError(f"No default checkpoint found for model type: {model_type}")
-        print(f"Loading default weights from: {weights_path}")
-    else:
-        print(f"Loading weights from specified path: {weights_path}")
+            weights_path = model_checkpoints.get(model_type)
+            if weights_path is None:
+                raise ValueError(f"No default checkpoint found for model type: {model_type}")
+            print(f"Loading default weights from: {weights_path}")
+        else:
+            print(f"Loading weights from specified path: {weights_path}")
 
-    ckpt = torch.load(weights_path, map_location=torch.device(device), weights_only=False)
-    if isinstance(ckpt, tuple):
-        model_state_dict = ckpt[0]
-    else:
-        model_state_dict = ckpt
+        ckpt = torch.load(weights_path, map_location=torch.device(device), weights_only=False)
+        if isinstance(ckpt, tuple):
+            model_state_dict = ckpt[0]
+        else:
+            model_state_dict = ckpt
 
-    model.load_state_dict(model_state_dict)
+        model.load_state_dict(model_state_dict)
+
     model.to(device)
     print(f"Model loaded successfully onto {device}.")
     return model
