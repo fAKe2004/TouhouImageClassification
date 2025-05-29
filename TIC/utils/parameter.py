@@ -8,7 +8,7 @@ LOG_DIR = 'log'
 CACHE_DIR = 'cache'
 
 def get_image_size(model_type: str):
-  if 'vit' in model_type.lower():
+  if 'vit' in model_type.lower() or 'resmoe' in model_type.lower():
     return VIT_IMAGE_SIZE
   else:
     return IMAGE_SIZE

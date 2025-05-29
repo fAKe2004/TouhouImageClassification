@@ -2,9 +2,10 @@
 python -m TIC.utils.serve --model vit --image data/伊吹萃香
 """
 
+from TIC.ResMoE.model import MoEClassifier
 from TIC.ResNet.model import resnet152
 from TIC.ViT.model import ViT
-from TIC.ResMoE.model import make_ViTMoE
+import TIC.ResMoE.train as moet
 from TIC.utils.parameter import *
 from TIC.utils.preprocess import get_transforms, get_class_to_idx
 
@@ -39,7 +40,7 @@ def get_model(model_type: str, num_classes: int):
     elif model_type == 'vit-large':
         return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-large-patch16-224-in21k')
     elif model_type == 'resmoe':
-        return make_ViTMoE(num_classes = num_classes, num_experts = num_classes, top_k = num_classes, gateway_t = 0.5)
+        return moet.get_model()
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -99,7 +100,9 @@ def serve(model, image_tensor, class_to_idx, device: str = 'cuda'):
         image_tensor = image_tensor.to(device)
         output = model(image_tensor)
 
-        if hasattr(output, 'logits'):
+        if isinstance(model, MoEClassifier):
+            logits = output[0]
+        elif hasattr(output, 'logits'):
             logits = output.logits
         else:
             logits = output
@@ -110,7 +113,7 @@ def serve(model, image_tensor, class_to_idx, device: str = 'cuda'):
 
     return predicted_class, confidence.item()
 
-def init(args = None, model = None, weights = None, device = None):
+def init(args = None, modelt = None, weights = None, device = None):
     '''
     Model initialization function.
     Parameters:
@@ -121,7 +124,7 @@ def init(args = None, model = None, weights = None, device = None):
         class_to_idx: Mapping from class names to indices.
     '''
     if args:
-        model = args.model
+        modelt = args.model
         weights = args.weights
         device = args.device
 
@@ -134,15 +137,15 @@ def init(args = None, model = None, weights = None, device = None):
         print(f"Error loading class mapping: {e}")
         exit(1)
 
-    print(f"Loading model '{model}'...")
+    print(f"Loading model '{modelt}'...")
     try:
-        model = load_model(model, num_classes, weights, device)
+        model = load_model(modelt, num_classes, weights, device)
     except Exception as e:
         print(f"Error loading model: {e}")
         exit(1)
 
     print("Getting image transformations...")
-    current_image_size = get_image_size(model)
+    current_image_size = get_image_size(modelt)
     try:
         transforms = get_transforms(DATA_DIR, current_image_size)
         print(f"Using image size: {current_image_size}")
