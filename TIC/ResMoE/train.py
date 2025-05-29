@@ -152,14 +152,24 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser("Training script for ResMoE")
     parser.add_argument("--restore", "-r", type=str, default=None, help="Path to the checkpoint to restore, if none is given, will train from scratch")
     parser.add_argument("--test", '-t', action='store_true', help="Only test the model with --restore given")
+    parser.add_argument("--transform", '-tr', type=str, default=None, help="Transform the checkpoint")
     args = parser.parse_args()
     args.test = args.test if args.restore is not None else False
 
     torch.set_float32_matmul_precision(MOE_TRAIN_PRECISION)
 
     model = get_model()
+    if args.transform:
+        if not args.restore:
+            print("No checkpoint to transform")
+            exit(1)
+        module = ResMoETrainerModule.load_from_checkpoint(args.restore, model=model, optimizer=optim.SGD(model.parameters(), lr=5e-2))
+        torch.save(module.model.state_dict(), args.transform)
+        exit(0)
+
     trainer_module = ResMoETrainerModule(model, optim.SGD(model.parameters(), lr = 5e-2))
     trainer = get_trainer()
+
     if not args.test:
         seed = torch.Generator().manual_seed(42)
         dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
