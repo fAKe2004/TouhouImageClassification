@@ -4,8 +4,7 @@ python -m TIC.utils.serve --model vit --image data/伊吹萃香
 
 from TIC.ResNet.model import resnet152
 from TIC.ViT.model import ViT
-from TIC.ViT.ntrain import ViTLModule
-from TIC.ResMoE.train import ResMoETrainerModule
+from TIC.ResMoE.model import make_ViTMoE
 from TIC.utils.parameter import *
 from TIC.utils.preprocess import get_transforms, get_class_to_idx
 
@@ -19,8 +18,6 @@ model_checkpoints = {
     'resnet': 'checkpoint/ResNet_model_final.pth',
     'vit-base': 'checkpoint/ViT_base_finetune_production_epoch10.pth',
     'vit-large': 'checkpoint/ViT_large_finetune_production_epoch25.pth',
-    'nvit': 'checkpoint/nViT.ckpt',
-    'resmoe': 'checkpoint/ResMoE.ckpt'
 }
 
 def get_model(model_type: str, num_classes: int):
@@ -41,6 +38,8 @@ def get_model(model_type: str, num_classes: int):
         return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-base-patch16-224-in21k')
     elif model_type == 'vit-large':
         return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-large-patch16-224-in21k')
+    elif model_type == 'resmoe':
+        return make_ViTMoE(num_classes = num_classes, num_experts = num_classes, top_k = num_classes, gateway_t = 0.5)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -57,29 +56,24 @@ def load_model(model_type: str, num_classes: int, weights_path: str = None, devi
     Returns:
         torch.nn.Module: The loaded model instance.
     """
-    if model_type == 'nvit':
-        model = ViTLModule.load_from_checkpoint(weights_path).vit
-    elif model_type == 'resmoe':
-        model = ResMoETrainerModule.load_from_checkpoint(weights_path).model
-    else:
-        model_type = model_type.lower().replace('_', '-')
-        model = get_model(model_type, num_classes)
-        
+    model_type = model_type.lower().replace('_', '-')
+    model = get_model(model_type, num_classes)
+    
+    if weights_path is None:
+        weights_path = model_checkpoints.get(model_type)
         if weights_path is None:
-            weights_path = model_checkpoints.get(model_type)
-            if weights_path is None:
-                raise ValueError(f"No default checkpoint found for model type: {model_type}")
-            print(f"Loading default weights from: {weights_path}")
-        else:
-            print(f"Loading weights from specified path: {weights_path}")
+            raise ValueError(f"No default checkpoint found for model type: {model_type}")
+        print(f"Loading default weights from: {weights_path}")
+    else:
+        print(f"Loading weights from specified path: {weights_path}")
 
-        ckpt = torch.load(weights_path, map_location=torch.device(device), weights_only=False)
-        if isinstance(ckpt, tuple):
-            model_state_dict = ckpt[0]
-        else:
-            model_state_dict = ckpt
+    ckpt = torch.load(weights_path, map_location=torch.device(device), weights_only=False)
+    if isinstance(ckpt, tuple):
+        model_state_dict = ckpt[0]
+    else:
+        model_state_dict = ckpt
 
-        model.load_state_dict(model_state_dict)
+    model.load_state_dict(model_state_dict)
 
     model.to(device)
     print(f"Model loaded successfully onto {device}.")
@@ -116,7 +110,7 @@ def serve(model, image_tensor, class_to_idx, device: str = 'cuda'):
 
     return predicted_class, confidence.item()
 
-def init(args):
+def init(args = None, model = None, weights = None, device = None):
     '''
     Model initialization function.
     Parameters:
@@ -126,6 +120,11 @@ def init(args):
         transforms: The image transformation pipeline.
         class_to_idx: Mapping from class names to indices.
     '''
+    if args:
+        model = args.model
+        weights = args.weights
+        device = args.device
+
     print("Loading class mapping...")
     try:
         class_to_idx = get_class_to_idx(DATA_DIR)
@@ -135,15 +134,15 @@ def init(args):
         print(f"Error loading class mapping: {e}")
         exit(1)
 
-    print(f"Loading model '{args.model}'...")
+    print(f"Loading model '{model}'...")
     try:
-        model = load_model(args.model, num_classes, args.weights, args.device)
+        model = load_model(model, num_classes, weights, device)
     except Exception as e:
         print(f"Error loading model: {e}")
         exit(1)
 
     print("Getting image transformations...")
-    current_image_size = get_image_size(args.model)
+    current_image_size = get_image_size(model)
     try:
         transforms = get_transforms(DATA_DIR, current_image_size)
         print(f"Using image size: {current_image_size}")
@@ -153,28 +152,34 @@ def init(args):
     
     return model, transforms, class_to_idx
 
-def full_judge(model, transforms, class_to_idx, args):
+def full_judge(model, transforms, class_to_idx, args = None, image = None, device = None, output = None):
     '''
     Full judgement function.
     Walk through the directory, predict for every image, and save the results if output is given.
     Return:
         Overall accuracy
     '''
+
+    if args:
+        image = args.image
+        device = args.device
+        output = args.output
+
     # Check if the input is a file or directory
-    if os.path.isfile(args.image):
-        print(f"Processing single image: {args.image}")
+    if os.path.isfile(image):
+        print(f"Processing single image: {image}")
         try:
-            image = Image.open(args.image).convert('RGB')
+            image = Image.open(image).convert('RGB')
             image_tensor = transforms(image).unsqueeze(0)
-            predicted_class, confidence = serve(model, image_tensor, class_to_idx, args.device)
+            predicted_class, confidence = serve(model, image_tensor, class_to_idx, device)
             print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f})")
         except Exception as e:
-            print(f"Error processing image {args.image}: {e}")
+            print(f"Error processing image {image}: {e}")
         return
 
     # Generate the output file's header
-    if (args.output):
-        with open(args.output, 'w') as f:
+    if (output):
+        with open(output, 'w') as f:
             print(f"filename,predicted_class,confidence,actual_class,correct,path", file=f)
 
     tot = 0
@@ -182,7 +187,7 @@ def full_judge(model, transforms, class_to_idx, args):
     correct_cnt = 0
 
     # Count the number of images
-    for root, dirs, files in os.walk(args.image):
+    for root, dirs, files in os.walk(image):
         for filename in files:
             if (os.path.splitext(filename)[1].lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']):
                 tot += 1
@@ -190,7 +195,7 @@ def full_judge(model, transforms, class_to_idx, args):
     bar = tqdm.tqdm(total=tot, desc="Processing images", unit="image")
 
     # Walk through the directory
-    for root, dirs, files in os.walk(args.image):
+    for root, dirs, files in os.walk(image):
         for filename in files:
             file_path = os.path.join(root, filename)
             label = os.path.basename(root)
@@ -199,13 +204,13 @@ def full_judge(model, transforms, class_to_idx, args):
                 try:
                     image = Image.open(file_path).convert('RGB')
                     image_tensor = transforms(image).unsqueeze(0)
-                    predicted_class, confidence = serve(model, image_tensor, class_to_idx, args.device)
+                    predicted_class, confidence = serve(model, image_tensor, class_to_idx, device)
                     print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f}) Correct: {predicted_class == label}")
                     cnt += 1
                     correct_cnt += (predicted_class == label)
                     
-                    if args.output:
-                        with open(args.output, 'a') as f:
+                    if output:
+                        with open(output, 'a') as f:
                             f.write(f"{filename},{predicted_class},{confidence:.4f},{label},{predicted_class == label},{file_path}\n")
                 
                 except Exception as e:
