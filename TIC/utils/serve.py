@@ -157,6 +157,8 @@ def full_judge(model, transforms, class_to_idx, args):
     '''
     Full judgement function.
     Walk through the directory, predict for every image, and save the results if output is given.
+    Return:
+        Overall accuracy
     '''
     # Check if the input is a file or directory
     if os.path.isfile(args.image):
@@ -212,6 +214,7 @@ def full_judge(model, transforms, class_to_idx, args):
             else:
                 print(f"Skipping non-image file: {filename}")
     print(f"Total images processed: {cnt}, Correct predictions: {correct_cnt}, Accuracy: {correct_cnt / cnt * 100:.2f}%")
+    return correct_cnt / cnt
 
 
 if __name__ == "__main__":
