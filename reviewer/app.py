@@ -206,7 +206,7 @@ def init_user_session():
 
 
 def get_reference(label):
-    ref_path = os.path.join(DATA_DIR, label, '1.jpg')
+    ref_path = os.path.join(DATA_DIR, label, '0.jpg')
     if os.path.exists(ref_path):
         return os.path.relpath(ref_path, DATA_DIR)
     return None
@@ -217,7 +217,7 @@ def count_images():
         label_dir = os.path.join(DATA_DIR, label)
         if os.path.isdir(label_dir):
             for file in os.listdir(label_dir):
-                if file == '1.jpg':
+                if file == '0.jpg':
                     continue
                 if file.endswith('.jpg'):
                     valid += 1
