@@ -67,7 +67,17 @@ class ViTLModule(L.LightningModule):
 
 class AugmentedDataset(L.LightningDataModule):
 
-    def __init__(self, train_path : str = DATA_DIR, test_path : str = TEST_DIR, batch_size : int = 8, train_split : float = 0.8, num_workers : int = 8, image_size = VIT_IMAGE_SIZE, enable_augmentation : bool = True, only_grey_augmentation : bool = False):
+    def __init__(self, 
+                 train_path : str = DATA_DIR, 
+                 test_path : str = TEST_DIR, 
+                 batch_size : int = 8, 
+                 train_split : float = 0.8,
+                 num_workers : int = 8,
+                 image_size = VIT_IMAGE_SIZE,
+                 enable_augmentation : bool = True,
+                 enable_diversity : bool = True,
+                 enable_generalization : bool = True,
+                 only_grey_augmentation : bool = False):
         super().__init__()
         self.train_path = train_path
         self.test_path = test_path
@@ -76,6 +86,8 @@ class AugmentedDataset(L.LightningDataModule):
         self.train_split = train_split
         self.num_workers = num_workers
         self.enable_augmentation = enable_augmentation
+        self.enable_diversity = enable_diversity
+        self.enable_generalization = enable_generalization
         self.only_grey_augmentation = only_grey_augmentation
 
     def setup(self, stage : str):
@@ -88,7 +100,7 @@ class AugmentedDataset(L.LightningDataModule):
                         v2.ToTensor(),                     
                         v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                     ])
-                else:
+                elif self.enable_diversity and self.enable_generalization:
                     transform = v2.Compose([
                         v2.RandomResizedCrop(self.image_size),          
                         v2.RandomHorizontalFlip(),         
@@ -98,6 +110,24 @@ class AugmentedDataset(L.LightningDataModule):
                         v2.ToTensor(),                     
                         v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                     ])
+                elif self.enable_diversity:
+                    transform = v2.Compose([
+                        v2.Resize(self.image_size),          
+                        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  
+                        v2.RandomGrayscale(p=0.2),
+                        v2.ToTensor(),                     
+                        v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                    ])
+                elif self.enable_generalization:
+                    transform = v2.Compose([
+                        v2.RandomResizedCrop(self.image_size),          
+                        v2.RandomHorizontalFlip(),         
+                        v2.RandomErasing(p=0.5),
+                        v2.ToTensor(),                     
+                        v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                    ])
+                else:
+                    raise Exception("Must select diversity or generalization!")
             else:
                 transform = v2.Compose([
                     v2.Resize(self.image_size),
@@ -142,6 +172,8 @@ def train_main(
         TRAIN_ID : str,
         PATIENCE : int = 3,
         ONLY_GREY_AUGMENTATION : bool = False,
+        ENABLE_DIVERSITY : bool = True,
+        ENABLE_GENERALIZATION : bool = True,
 ):
     parser = argparse.ArgumentParser()
     parser.add_argument('--restore', '-r', type = str, default = None, help = 'Path to the checkpoint to restore')
@@ -179,6 +211,8 @@ def train_main(
         num_workers=NUM_WORKERS, 
         image_size=VIT_IMAGE_SIZE, 
         enable_augmentation=ENABLE_AUGMENTATION,
+        enable_diversity=ENABLE_DIVERSITY,
+        enable_generalization=ENABLE_GENERALIZATION,
         only_grey_augmentation=ONLY_GREY_AUGMENTATION,
     )
 
