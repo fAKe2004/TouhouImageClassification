@@ -170,12 +170,14 @@ def full_judge(model, transforms, class_to_idx, args = None, image = None, devic
 
     # Check if the input is a file or directory
     if os.path.isfile(image):
-        print(f"Processing single image: {image}")
+        if not output:
+            print(f"Processing single image: {image}")
         try:
             image = Image.open(image).convert('RGB')
             image_tensor = transforms(image).unsqueeze(0)
             predicted_class, confidence = serve(model, image_tensor, class_to_idx, device)
-            print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f})")
+            if not output:
+                print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f})")
         except Exception as e:
             print(f"Error processing image {image}: {e}")
         return
@@ -203,12 +205,14 @@ def full_judge(model, transforms, class_to_idx, args = None, image = None, devic
             file_path = os.path.join(root, filename)
             label = os.path.basename(root)
             if os.path.splitext(filename)[1].lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
-                print(f"--- Processing: {filename} ---")
+                if not output:
+                    print(f"--- Processing: {filename} ---")
                 try:
                     image = Image.open(file_path).convert('RGB')
                     image_tensor = transforms(image).unsqueeze(0)
                     predicted_class, confidence = serve(model, image_tensor, class_to_idx, device)
-                    print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f}) Correct: {predicted_class == label}")
+                    if not output:
+                        print(f"Prediction: {predicted_class} (Confidence: {confidence:.4f}) Correct: {predicted_class == label}")
                     cnt += 1
                     correct_cnt += (predicted_class == label)
                     
@@ -220,7 +224,8 @@ def full_judge(model, transforms, class_to_idx, args = None, image = None, devic
                     print(f"Error processing image {filename}: {e}")
                 bar.update(1)
             else:
-                print(f"Skipping non-image file: {filename}")
+                if not output:
+                    print(f"Skipping non-image file: {filename}")
     print(f"Total images processed: {cnt}, Correct predictions: {correct_cnt}, Accuracy: {correct_cnt / cnt * 100:.2f}%")
     return correct_cnt / cnt
 

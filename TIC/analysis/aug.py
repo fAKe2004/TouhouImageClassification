@@ -15,6 +15,10 @@ AUGS = [
         v2.Resize(VIT_IMAGE_SIZE),
         v2.RandomGrayscale(p=1.0),
     ])),
+    ("only_colorjitter", 8, v2.Compose([
+        v2.Resize(VIT_IMAGE_SIZE),
+        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+    ])),
     ("full", 16, v2.Compose([
         v2.RandomResizedCrop(VIT_IMAGE_SIZE),          
         v2.RandomHorizontalFlip(),         
