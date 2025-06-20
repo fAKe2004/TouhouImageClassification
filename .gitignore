@@ -174,5 +174,14 @@ cython_debug/
 .pypirc
 
 # data&vsc folder
+data/*
 data/
+crawler/data/
 .vscode/
+
+# debug info
+crawler/debug.html
+data/*
+log/*
+checkpoint/*
+TICdata.zip

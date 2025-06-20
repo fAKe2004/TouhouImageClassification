@@ -16,7 +16,7 @@ def initialize_pending():
         
         for filename in os.listdir(label_dir):
             # 跳过参考图像
-            if filename == "1.jpg":
+            if filename == "0.jpg":
                 print(f"跳过参考图像: {filename}")
                 continue
                 
