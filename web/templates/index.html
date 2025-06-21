@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Touhou Image Classification</title>
+    <style>
+        .device-mode {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            background-color: #f8f9fa;
+            color: #6c757d;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            font-size: 0.9rem;
+            border: 1px solid #dee2e6;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            color: #1877f2;
+            margin-bottom: 2rem;
+            margin-top: -0.5rem;
+        }
+
+        h1 a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .container {
+            background-color: #fff;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
+            position: relative;
+        }
+
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .upload-form input[type="file"] {
+            border: 1px solid #ddd;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .upload-form input[type="submit"] {
+            background-color: #1877f2;
+            color: #fff;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .upload-form input[type="submit"]:hover {
+            background-color: #166fe5;
+        }
+
+        .flash-messages {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 1rem 0;
+        }
+
+        .flash-messages li {
+            background-color: #ffebe8;
+            color: #d8000c;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+
+        .flash-messages li.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .result-card {
+            background-color: #f7f7f7;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .result-card img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .result-card p {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        .result-card .filename {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        .intro {
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="device-mode">
+            Mode: {{ device_mode }}
+        </div>
+        <h1><a href="/">Touhou Image Classification</a></h1>
+        <hr>
+
+        {% if add_intro %}
+            <div class="intro">
+                <p>Welcome to the TouhouIC web demo. Upload one or more images, and our model will predict the character's identity.</p>
+                <p>The source code is available on <a href="https://github.com/fAKe2004/TouhouImageClassification">GitHub</a>. </p>
+            </div>
+        {% endif %}
+
+        <form class="upload-form" method="post" enctype="multipart/form-data" onsubmit="document.getElementById('loading-container').style.display = 'block'; document.querySelector('.flash-messages').style.display = 'none';"> 
+            <input type="file" name="files[]" multiple>
+            <input type="submit" value="Upload and Classify">
+        </form>
+
+        <div id="loading-container" style="display: none;">
+            <div style="text-align: center; margin-bottom: 1rem;">
+                <h2 lang="ja">少女祈祷中 (Now Loading...)</h2>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            <!-- hide this box on submit click -->
+            <ul class="flash-messages">
+                {% if not daemon_running and not messages %}
+                <li class="info">It may take a while for the first request due to model loading.</li>
+                {% endif %}
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+            </ul>
+        {% endwith %}
+
+        <hr>
+
+        {% if results %}
+            <h2>Results</h2>
+            <div class="results">
+                {% for result in results %}
+                    <div class="result-card">
+                        <img src="data:image/jpeg;base64,{{ result.image }}" alt="Uploaded Image">
+                        <p>{{ result.prediction }}</p>
+                        <p class="filename">{{ result.filename }}</p>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

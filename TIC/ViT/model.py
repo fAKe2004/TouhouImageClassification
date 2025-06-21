@@ -27,6 +27,7 @@ def ViT(num_classes: int, pretrained: bool = True, model_name: str = None) -> Vi
     model = ViTForImageClassification.from_pretrained(
         ensure(model_name),
         num_labels=num_classes,
+        pretrained=pretrained,
         ignore_mismatched_sizes=True, # Allows adapting the final layer and position embeddings
     )
     # Ensure the config reflects the potentially new image size if different from pretrained default (224)
