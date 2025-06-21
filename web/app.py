@@ -4,7 +4,7 @@ from PIL import Image
 import base64
 from io import BytesIO
 
-from runtime import serve_batch, is_daemon_running, is_daemon_cuda, check_cuda_available
+from runtime import serve_batch, is_daemon_running, is_daemon_cuda
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -55,5 +55,27 @@ def upload_file():
 
     return render_template('index.html', results=results, daemon_running=running, device_mode=device_mode, add_intro=add_intro)
 
+def run_ipv4():
+    app.run(host='0.0.0.0', port=20810, debug=False)
+
+def run_ipv6():
+    app.run(host='::', port=20811, debug=False) # EoSD release date
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    import argparse
+    parser = argparse.ArgumentParser(description='Run the Flask app.')
+    parser.add_argument('--debug', action='store_true', help='Run in debug mode')
+    args = parser.parse_args()
+    if args.debug:
+        app.run(host='0.0.0.0', port=80, debug=True)
+    else:
+        import threading
+        t1 = threading.Thread(target=run_ipv4)
+        t2 = threading.Thread(target=run_ipv6)
+        
+        t1.start()
+        t2.start()
+        
+        t1.join()
+        t2.join()
