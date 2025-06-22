@@ -2,6 +2,16 @@
 
 ---
 
+## To Try Out Our Project:
+
+We host a **web demo** for TouhouIC  at [**touhou.arthas.org**](https://touhou.arthas.org). 
+
+You can upload images, and our model will return predicted character identities.
+
+---
+
+## Repository Structure
+
 This repository contains the artifact for  CS3308-02 course project *TouhouIC: Accurate Image Classifier at Minimal Cost with Transfer Learning and Data Augmentation*.
 
 Repository Structure:
@@ -29,21 +39,13 @@ Repository Structure:
 
 ---
 
-## To try out our project:
-
-We host a **web demo** for TouhouIC  at [touhou.arthas.org](touhou.arthas.org). 
-
-You can upload images, and our model will return predicted character identities.
-
----
-
 ## Technical Report:
 
 Available at [doc/report.pdf](doc/report.pdf)
 
 ---
 
-## To reproduce the main result:
+## To Reproduce The Main Result:
 
 - Step 1: 
   - Crawl dataset with `crawler/pixiv_crawl.py`; Pixiv Prime account is required to accquire comparatively high-quality data. 

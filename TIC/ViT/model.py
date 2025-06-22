@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from TIC.utils.ensure import ensure
 
-def ViT(num_classes: int, pretrained: bool = True, model_name: str = None) -> ViTForImageClassification:
+def ViT(num_classes: int, pretrained: bool = True, model_name: str = None, wrap_model_name=True) -> ViTForImageClassification:
   """
   Loads a Vision Transformer (ViT) model for image classification.
 
@@ -25,7 +25,7 @@ def ViT(num_classes: int, pretrained: bool = True, model_name: str = None) -> Vi
     # Load pretrained model, adjusting the classifier head for the new number of classes
     # and allowing resizing of position embeddings if IMAGE_SIZE differs from 224.
     model = ViTForImageClassification.from_pretrained(
-        ensure(model_name),
+        ensure(model_name) if wrap_model_name else model_name,
         num_labels=num_classes,
         pretrained=pretrained,
         ignore_mismatched_sizes=True, # Allows adapting the final layer and position embeddings
@@ -39,7 +39,7 @@ def ViT(num_classes: int, pretrained: bool = True, model_name: str = None) -> Vi
   else:
     # Initialize a new model from scratch with the specified configuration
     config = ViTConfig.from_pretrained(
-      ensure(model_name),
+      ensure(model_name) if wrap_model_name else model_name,
       num_labels=num_classes,
     )
     model = ViTForImageClassification(config)

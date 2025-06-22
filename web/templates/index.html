@@ -78,6 +78,85 @@
             background-color: #166fe5;
         }
 
+        .form-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .lang-selector {
+            display: flex;
+            align-items: center;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .lang-selector span {
+            padding: 0.6rem 0.8rem;
+            font-size: 0.9rem;
+            color: #0056b3;
+            background-color: #e7f3ff;
+        }
+
+        .lang-selector .lang-btn {
+            background-color: #fff;
+            border: none;
+            border-left: 1px solid #ddd;
+            padding: 0.6rem 0.8rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: #333;
+            transition: background-color 0.2s;
+        }
+
+        .lang-selector .lang-btn:hover {
+            background-color: #f0f0f0;
+        }
+
+        .lang-selector .lang-btn.active {
+            background-color: #e9e9e9;
+            font-weight: bold;
+            color: #1877f2;
+        }
+
+        .upload-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .drop-zone {
+            border: 3px dotted #aaa;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            width: 100%;
+            cursor: pointer;
+            background-color: rgba(230, 235, 240, 0.5);
+            box-sizing: border-box;
+        }
+
+        .drop-zone.dragover {
+            border-color: #1877f2;
+        }
+
+        .url-input {
+            width: 100%;
+            padding: 0.5rem;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            box-sizing: border-box;
+        }
+
         .flash-messages {
             list-style: none;
             padding: 0;
@@ -149,11 +228,27 @@
                 <p>Welcome to the TouhouIC web demo. Upload one or more images, and our model will predict the character's identity.</p>
                 <p>The source code is available on <a href="https://github.com/fAKe2004/TouhouImageClassification">GitHub</a>. </p>
             </div>
+            <hr>
         {% endif %}
 
         <form class="upload-form" method="post" enctype="multipart/form-data" onsubmit="document.getElementById('loading-container').style.display = 'block'; document.querySelector('.flash-messages').style.display = 'none';"> 
-            <input type="file" name="files[]" multiple>
-            <input type="submit" value="Upload and Classify">
+            <div class="upload-container">
+                <div class="drop-zone" id="drop-zone">
+                    <p>Drag & drop files here, or click to select files</p>
+                    <input type="file" name="files[]" multiple hidden>
+                </div>
+                <textarea name="urls" class="url-input" placeholder="Or paste image URLs here, one per line"></textarea>
+            </div>
+            <div class="form-actions">
+                <input type="submit" value="Upload and Classify">
+                <div class="lang-selector">
+                    <span>Lang:</span>
+                    <button type="button" class="lang-btn {% if lang == 'EN' %}active{% endif %}" data-lang="EN">EN</button>
+                    <button type="button" class="lang-btn {% if lang == 'JP' %}active{% endif %}" data-lang="JP">JP</button>
+                    <button type="button" class="lang-btn {% if lang == 'CN' %}active{% endif %}" data-lang="CN">CN</button>
+                </div>
+            </div>
+            <input type="hidden" name="lang" id="lang-input" value="{{ lang or 'JP' }}">
         </form>
 
         <div id="loading-container" style="display: none;">
@@ -189,5 +284,47 @@
             </div>
         {% endif %}
     </div>
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.querySelector('input[type="file"]');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            fileInput.files = e.dataTransfer.files;
+            const p = dropZone.querySelector('p');
+            if (fileInput.files.length > 0) {
+                p.textContent = `${fileInput.files.length} file(s) selected`;
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            const p = dropZone.querySelector('p');
+            if (fileInput.files.length > 0) {
+                p.textContent = `${fileInput.files.length} file(s) selected`;
+            }
+        });
+
+        const langButtons = document.querySelectorAll('.lang-btn');
+        const langInput = document.getElementById('lang-input');
+        langButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                langButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                langInput.value = button.dataset.lang;
+            });
+        });
+    </script>
 </body>
 </html>

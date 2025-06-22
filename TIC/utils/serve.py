@@ -36,9 +36,9 @@ def get_model(model_type: str, num_classes: int):
     if model_type == 'resnet':
         return resnet152(num_classes=num_classes)
     elif model_type == 'vit-base':
-        return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-base-patch16-224-in21k')
+        return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-base-patch16-224-in21k', wrap_model_name=False)
     elif model_type == 'vit-large':
-        return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-large-patch16-224-in21k')
+        return ViT(num_classes=num_classes, pretrained=False, model_name='google/vit-large-patch16-224-in21k', wrap_model_name=False)
     elif model_type == 'resmoe':
         return moet.get_model()
     else:

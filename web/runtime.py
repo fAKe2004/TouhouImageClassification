@@ -1,7 +1,7 @@
 import os
 import sys
 import threading
-import time
+from typing import List
 from PIL import Image
 import torch
 
@@ -26,6 +26,10 @@ DATA_DIR = os.path.join(_PROJECT_ROOT, 'data/data_filtered_vit_base')
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 INACTIVITY_TIMEOUT = 5 * 60  # 5 minutes
 GPU_MEMORY_THRESHOLD = 0.5
+MAX_BATCH_SIZE = 64
+
+ACTUAL_LABEL_LANG = "CN"
+DEFAULT_LABEL_LANG = "JP"    
 
 class ModelDaemon:
     def __init__(self):
@@ -90,20 +94,38 @@ class ModelDaemon:
         self.timer = threading.Timer(INACTIVITY_TIMEOUT, self.stop)
         self.timer.start()
 
-    def predict(self, image: Image.Image):
+    def predict(self, images: Image.Image | List[Image.Image]):
         if self.model is None:
             raise Exception("Model is not loaded. This should not happen if using serve().")
 
         self._reset_timer()
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        image_tensor = self.transforms(image).unsqueeze(0).to(DEVICE)
+        
+        is_single = not isinstance(images, list)
+        if is_single:
+            images = [images]
+
+        image_tensors = []
+        for image in images:
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            image_tensors.append(self.transforms(image))
+        
+        image_batch = torch.stack(image_tensors).to(DEVICE)
+
         with torch.no_grad():
-            outputs = self.model(image_tensor)
+            outputs = self.model(image_batch)
             probabilities = torch.nn.functional.softmax(outputs.logits, dim=1)
-            confidence, predicted = torch.max(probabilities, 1)
-            class_name = self.idx_to_class[predicted.item()]
-        return class_name, confidence.item()
+            confidences, predicted_indices = torch.max(probabilities, 1)
+            
+        results = []
+        for i in range(len(images)):
+            class_name = self.idx_to_class[predicted_indices[i].item()]
+            confidence = confidences[i].item()
+            results.append((class_name, confidence))
+            
+        if is_single:
+            return results[0]
+        return results
 
 daemon = ModelDaemon()
 
@@ -145,28 +167,85 @@ def check_cuda_available():
     if not torch.cuda.is_available():
         return False
     return check_gpu_memory()
-    
-    
 
-def serve(image: Image.Image):
-    started = False
-    with daemon.lock:
-        if daemon.model is None:
 
-            daemon.start()
-            started = True
 
-    prediction, confidence = daemon.predict(image)
-    return prediction, confidence, started
 
-def serve_batch(images: list[Image.Image]):
-    started = False
-    with daemon.lock:
-        if daemon.model is None:
-            daemon.start()
-            started = True
+
+
+"""
+Lang
+"""
+
+label_lange_map = {} 
+# TARGET_LANG -> (ACTUAL_LABEL -> TARGET_LABEL)
+
+def prepare_label_lang_map(file="th_name_lang_map.csv"):
+    """
+    Prepares the label language map for remapping class labels.
+    """
+    global label_lange_map
+    if label_lange_map:
+        return
+
+    filepath = os.path.join(_RUNTIME_DIR, file)
+    if not os.path.exists(filepath):
+        print(f"Warning: Language map file '{file}' not found in '{_RUNTIME_DIR}'.")
+        return
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        if not lines:
+            return
+
+        header = [h.strip() for h in lines[0].split(',')]
+        try:
+            actual_lang_idx = header.index(ACTUAL_LABEL_LANG)
+        except ValueError:
+            raise ValueError(f"ACTUAL_LABEL_LANG '{ACTUAL_LABEL_LANG}' not found in header of {file}")
+
+        for lang in header:
+            label_lange_map[lang] = {}
+
+        for line in lines[1:]:
+            parts = [p.strip() for p in line.split(',')]
+            if len(parts) != len(header):
+                continue
+
+            actual_label = parts[actual_lang_idx]
+            for i, target_lang in enumerate(header):
+                target_label = parts[i]
+                if target_label:
+                    label_lange_map[target_lang][actual_label] = target_label
+
+def remap_label_lang(label: str, target_lang: str = DEFAULT_LABEL_LANG) -> str:
+    """
+    Remaps the class labels to the specified language.
+    """
+    if not label_lange_map:
+        prepare_label_lang_map()
+
+    return label_lange_map.get(target_lang, {}).get(label, label)
         
+
+"""
+Serve
+"""
+
+def serve_batch(images: list[Image.Image], target_lang=DEFAULT_LABEL_LANG):
+    started = False
+    with daemon.lock:
+        if daemon.model is None:
+            daemon.start()
+            started = True
+
     results = []
-    for image in images:
-        results.append(daemon.predict(image))
+    while len(images):
+        batch = images[:MAX_BATCH_SIZE]
+        images = images[MAX_BATCH_SIZE:]
+        results.extend(daemon.predict(batch))
+        
+    results = [(remap_label_lang(label, target_lang), confidence) 
+               for label, confidence in results]
+                
     return results, started
