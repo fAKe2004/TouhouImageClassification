@@ -21,7 +21,7 @@ except ImportError:
     pynvml = None
 
 MODEL_TYPE = 'vit-large'
-WEIGHTS_PATH = os.path.join(_PROJECT_ROOT, 'checkpoint/ViT_large_finetune_on_filtered_data_production_epoch5.pth')
+WEIGHTS_PATH = os.path.join(_PROJECT_ROOT, 'checkpoint/nViT_epoch17.pth')
 DATA_DIR = os.path.join(_PROJECT_ROOT, 'data/data_filtered_vit_base')
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 INACTIVITY_TIMEOUT = 5 * 60  # 5 minutes

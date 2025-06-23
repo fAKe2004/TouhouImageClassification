@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Touhou Image Classification</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✨</text></svg>">
     <style>
         .device-mode {
             position: absolute;
@@ -213,14 +214,45 @@
             font-size: 1.1rem;
             color: #666;
         }
+
+        @media (max-width: 640px) { /* Mobile Platform Display*/
+            body {
+                padding: 1rem;
+            }
+            .container {
+                padding: 1.5rem;
+            }
+            h1 {
+                font-size: 1.8rem;
+                text-align: center;
+                margin-bottom: 0.5rem; /* Reduce space below title */
+            }
+            .form-actions {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .results {
+                grid-template-columns: 1fr;
+            }
+            .device-mode {
+                position: static; /* Remove absolute positioning */
+                margin: 0.5rem auto 0.5rem; /* Center it with controlled spacing */
+                width: fit-content; /* Adjust width to content */
+                padding: 0.3rem 0.8rem; /* Make it smaller */
+                font-size: 0.8rem;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
+
+        <h1><a href="/">Touhou Image Classification</a></h1>
+
         <div class="device-mode">
             Mode: {{ device_mode }}
         </div>
-        <h1><a href="/">Touhou Image Classification</a></h1>
+
         <hr>
 
         {% if add_intro %}
