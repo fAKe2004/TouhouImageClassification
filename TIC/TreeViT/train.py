@@ -140,7 +140,7 @@ def auto_train(model : nn.Module, slogan : str, dataset : data.Dataset, testset 
     trainer.test(trainer_module, testset)
 
 def train_root(model : TreeViT.TreeModule, restore : str = None):
-    dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
+    dataset = get_dataset(data_dir = UNFILTERED_DATA_DIR, image_size = VIT_IMAGE_SIZE)
     testset = get_dataset(data_dir = TEST_DIR, image_size = VIT_IMAGE_SIZE)
     map_dict = load_map_dict(TREEVIT_MAP_FILE)
     map_indeces_dict = make_map_indeces_dict(map_dict, dataset.class_to_idx, get_category_labeler(map_dict))
@@ -149,7 +149,7 @@ def train_root(model : TreeViT.TreeModule, restore : str = None):
     auto_train(model.root, "root", category_dataset, category_testset, restore)
 
 def train_son(model : TreeViT.TreeModule, target_category : int, restore : str = None):
-    dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
+    dataset = get_dataset(data_dir = UNFILTERED_DATA_DIR, image_size = VIT_IMAGE_SIZE)
     testset = get_dataset(data_dir = TEST_DIR, image_size = VIT_IMAGE_SIZE)
     map_dict = load_map_dict(TREEVIT_MAP_FILE)
     map_indeces_dict = make_map_indeces_dict(map_dict, dataset.class_to_idx, get_category_labeler(map_dict))
@@ -158,7 +158,7 @@ def train_son(model : TreeViT.TreeModule, target_category : int, restore : str =
     auto_train(model.sons[target_category], f"son_{target_category}", son_dataset, son_testset, restore)
 
 def train_full(model : TreeViT.TreeModule, restore : str = None):
-    dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
+    dataset = get_dataset(data_dir = UNFILTERED_DATA_DIR, image_size = VIT_IMAGE_SIZE)
     testset = get_dataset(data_dir = TEST_DIR, image_size = VIT_IMAGE_SIZE)
     auto_train(model, "full", dataset, testset, restore, TREEVIT_MAX_EPOCHS)
 
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     L.seed_everything(TREEVIT_RAND_SEED)
 
     map_dict = load_map_dict(TREEVIT_MAP_FILE)
-    dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
+    dataset = get_dataset(data_dir = UNFILTERED_DATA_DIR, image_size = VIT_IMAGE_SIZE)
     map_indeces_dict = make_map_indeces_dict(map_dict, dataset.class_to_idx, get_category_labeler(map_dict))
     model = get_model(map_indeces_dict)
 

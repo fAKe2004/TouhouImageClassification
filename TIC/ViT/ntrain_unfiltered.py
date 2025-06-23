@@ -1,4 +1,5 @@
 from .ntrain import train_main
+from TIC.utils.parameter import UNFILTERED_DATA_DIR
 
 if __name__ == '__main__':
 
@@ -11,7 +12,7 @@ if __name__ == '__main__':
     NUM_WORKERS = 4
     TRAIN_SPLIT = 0.8
     TRAIN_ID = "nViT_unfiltered"
-    DATA_DIR = "data"
+    DATA_DIR = UNFILTERED_DATA_DIR
     MAX_EPOCHS = 20
     ENABLE_MIX_UP = True
     ENABLE_AUGMENTATION = True

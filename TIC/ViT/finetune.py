@@ -296,11 +296,11 @@ if __name__ == '__main__':
   # Use float32 for model weights, autocast handles mixed precision
   torch.set_default_dtype(torch.float32)
 
-  logger.info(f"Loading dataset from {DATA_DIR}...")
+  logger.info(f"Loading dataset from {UNFILTERED_DATA_DIR}...")
   # Ensure get_dataset provides appropriate normalization for ViT if needed
   # Often ViT pretrained models expect normalization based on ImageNet stats
   dataset = get_dataset(
-      data_dir=DATA_DIR,
+      data_dir=UNFILTERED_DATA_DIR,
       image_size=VIT_IMAGE_SIZE,
   )
   num_classes = len(dataset.classes)

@@ -1,4 +1,5 @@
 from .ntrain import train_main
+from TIC.utils.parameter import FILTERED_DATA_DIR
 
 if __name__ == '__main__':
     train_main(
@@ -11,7 +12,7 @@ if __name__ == '__main__':
         NUM_WORKERS = 4,
         TRAIN_SPLIT = 0.8,
         TRAIN_ID = "nViT_but_mix",
-        DATA_DIR = "data_filtered_vit_base",
+        DATA_DIR = FILTERED_DATA_DIR,
         MAX_EPOCHS = 20,
         ENABLE_MIX_UP = False,
         ENABLE_AUGMENTATION = True,

@@ -228,9 +228,9 @@ if __name__ == '__main__':
 
   torch.set_default_dtype(torch.float32)
 
-  logger.info(f"Loading dataset from {DATA_DIR}...")
+  logger.info(f"Loading dataset from {UNFILTERED_DATA_DIR}...")
   dataset = get_dataset( 
-      data_dir=DATA_DIR,
+      data_dir=UNFILTERED_DATA_DIR,
       image_size=IMAGE_SIZE,
   )
   num_classes = len(dataset.classes)

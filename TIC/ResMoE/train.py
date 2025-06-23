@@ -172,7 +172,7 @@ if __name__ == '__main__':
 
     if not args.test:
         seed = torch.Generator().manual_seed(42)
-        dataset = get_dataset(data_dir = DATA_DIR, image_size = VIT_IMAGE_SIZE)
+        dataset = get_dataset(data_dir = UNFILTERED_DATA_DIR, image_size = VIT_IMAGE_SIZE)
         train_set_size = int(len(dataset) * MOE_TRAIN_SPLIT)
         val_set_size = len(dataset) - train_set_size
         train_set, valid_set = data.random_split(dataset, [train_set_size, val_set_size], generator = seed)

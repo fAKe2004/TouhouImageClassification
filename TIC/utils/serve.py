@@ -113,7 +113,7 @@ def serve(model, image_tensor, class_to_idx, device: str = 'cuda'):
 
     return predicted_class, confidence.item()
 
-def init(args = None, modelt = None, weights = None, device = None):
+def init(args = None, modelt = None, weights = None, device = None, data_dir=DATA_DIR):
     '''
     Model initialization function.
     Parameters:
@@ -130,7 +130,7 @@ def init(args = None, modelt = None, weights = None, device = None):
 
     print("Loading class mapping...")
     try:
-        class_to_idx = get_class_to_idx(DATA_DIR)
+        class_to_idx = get_class_to_idx(data_dir)
         num_classes = len(class_to_idx)
         print(f"Loaded {num_classes} classes.")
     except Exception as e:
@@ -147,7 +147,7 @@ def init(args = None, modelt = None, weights = None, device = None):
     print("Getting image transformations...")
     current_image_size = get_image_size(modelt)
     try:
-        transforms = get_transforms(DATA_DIR, current_image_size)
+        transforms = get_transforms(data_dir, current_image_size)
         print(f"Using image size: {current_image_size}")
     except Exception as e:
         print(f"Error getting transformations: {e}")
@@ -242,7 +242,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(f"Using device: {args.device}")
-    model, transforms, class_to_idx = init(args)
+    model, transforms, class_to_idx = init(args, data_dir=FILTERED_DATA_DIR)
 
     if (args.full):
         print("Full judgement mode activated.")

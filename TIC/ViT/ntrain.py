@@ -248,6 +248,8 @@ def train_main(
     trainer.test(lmodel, datamodule = data, ckpt_path = args.restore if args.test else None)
 
 if __name__ == '__main__':
+    
+    # Filtered Dataset + Full Augmentation
     train_main(
         PRETRAINED = True,
         MODEL_NAME = 'google/vit-large-patch16-224',
@@ -258,7 +260,7 @@ if __name__ == '__main__':
         NUM_WORKERS = 4,
         TRAIN_SPLIT = 0.8,
         TRAIN_ID = "nViT",
-        DATA_DIR = "data_filtered_vit_base",
+        DATA_DIR = FILTERED_DATA_DIR,
         MAX_EPOCHS = 20,
         ENABLE_MIX_UP = True,
         ENABLE_AUGMENTATION = True,
